@@ -219,6 +219,71 @@ function MissingRow({ source, onUpload, uploadError, uploading }: {
   );
 }
 
+// ─── Input Card ───────────────────────────────────────────────────────────────
+function InputCard({ label, value, onChange, placeholder, disabled }: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder: string; disabled?: boolean;
+}) {
+  return (
+    <div className={`input-card flex-1${value.length > 0 ? " is-filled" : ""}`}>
+      <div className="input-card-label">{label}</div>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
+
+// ─── Step Indicator ────────────────────────────────────────────────────────────
+const STEP_LABELS = ["Draft", "Sources", "Analysis"] as const;
+function StepIndicator({ current }: { current: number }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {STEP_LABELS.map((label, i) => {
+        const n = i + 1;
+        const isDone = current > n;
+        const isActive = current === n;
+        return (
+          <div key={n} className="flex items-center gap-1.5">
+            {i > 0 && <div className={`step-connector${isDone ? " step-connector-done" : ""}`} />}
+            <div className={`flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+              isActive ? "text-[#1A1A18]" : isDone ? "text-[#10B981]" : "text-[#C8C8C6]"
+            }`}>
+              <div className={`step-dot ${isActive ? "step-dot-active" : isDone ? "step-dot-done" : "step-dot-pending"}`}>
+                {isDone ? "✓" : n}
+              </div>
+              <span className="hidden sm:block">{label}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Error Banner ─────────────────────────────────────────────────────────────
+function ErrorBanner({ error }: { error: string }) {
+  let msg = error;
+  try {
+    const m = error.match(/\{.*\}/s);
+    if (m) {
+      const p = JSON.parse(m[0]);
+      if (p?.error?.type === "overloaded_error") msg = "Claude is currently overloaded — please wait a moment and try again.";
+      else if (p?.error?.message) msg = p.error.message;
+    }
+  } catch { /* keep original */ }
+  const isOverload = msg.includes("overloaded");
+  return (
+    <div className={`card px-4 py-3.5 text-sm flex items-start gap-2.5 ${isOverload ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+      <span className="text-base mt-0.5 flex-shrink-0">{isOverload ? "⏳" : "⚠"}</span>
+      <div><span className="font-semibold">{isOverload ? "API busy — " : "Error — "}</span>{msg}</div>
+    </div>
+  );
+}
+
 // ─── Annotated Text ────────────────────────────────────────────────────────────
 type TextSegment = { type: "text"; content: string } | { type: "claim"; content: string; claim: Claim };
 
@@ -589,105 +654,117 @@ export default function Home() {
 
   const totalSources    = foundSources.length + missingSources.length + uploadedSources.length;
   const resolvedSources = foundSources.length + uploadedSources.length;
+  const currentStep: 1 | 2 | 3 = result ? 3 : findPhase === "done" ? 2 : 1;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen" style={{ background: "var(--background)" }}>
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-20 border-b" style={{ background: "rgba(247,247,245,0.85)", backdropFilter: "blur(12px)", borderColor: "var(--border)" }}>
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
+      <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
+        style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
+        <div className="max-w-5xl mx-auto px-8 h-14 flex items-center justify-between">
+          {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-lg bg-[#1A1A18] flex items-center justify-center flex-shrink-0">
               <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
               </svg>
             </div>
-            <span className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Claim Verifier</span>
+            <span className="text-sm font-semibold text-[#1A1A18]">Claim Verifier</span>
           </div>
-          <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>Powered by Claude</span>
+          {/* Step indicator */}
+          <StepIndicator current={currentStep} />
+          <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
+        {/* Progress bar */}
+        <div className="h-0.5 transition-all duration-700 ease-out"
+          style={{ width: `${(currentStep / 3) * 100}%`, background: "#1A1A18" }} />
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
+      {/* ── Step 1: Draft + References ── */}
+      {currentStep === 1 && (
+        <main className="flex-1 flex flex-col max-w-5xl mx-auto w-full px-8 pt-10 pb-8 step-enter">
+          {/* Hero */}
+          <div className="mb-6">
+            <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18] mb-1.5">
+              Verify your academic claims
+            </h1>
+            <p className="text-sm text-[#9A9A98]">
+              Paste your draft and reference list — we'll verify every claim against its cited source.
+            </p>
+          </div>
 
-        {/* ── Inputs ── */}
-        <div className="space-y-4">
-          <div className="card p-5 space-y-3">
-            <label className="block text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
-              Introduction Text
-            </label>
-            <textarea
-              value={introText} onChange={e => setIntroText(e.target.value)}
+          {/* Two-column inputs — grow to fill available height */}
+          <div className="grid grid-cols-2 gap-4" style={{ flex: 1, minHeight: 0 }}>
+            <InputCard
+              label="Draft"
+              value={introText}
+              onChange={setIntroText}
               placeholder="Paste your academic introduction here, including inline citations…"
-              rows={9} disabled={findPhase === "finding"}
-              className="w-full bg-transparent text-sm leading-relaxed placeholder-[#BBBBB9] focus:outline-none resize-none disabled:opacity-60"
-              style={{ color: "var(--text-primary)" }}
+              disabled={findPhase === "finding"}
             />
-          </div>
-
-          <div className="card p-5 space-y-3">
-            <label className="block text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>
-              Reference List
-            </label>
-            <textarea
-              value={references} onChange={e => setReferences(e.target.value)}
+            <InputCard
+              label="Reference List"
+              value={references}
+              onChange={setReferences}
               placeholder={"1. Smith, J. et al. (2021). Full title. Journal, 12(3), 45–67.\n2. …"}
-              rows={5} disabled={findPhase === "finding"}
-              className="w-full bg-transparent text-sm leading-relaxed placeholder-[#BBBBB9] focus:outline-none resize-none disabled:opacity-60"
-              style={{ color: "var(--text-primary)" }}
+              disabled={findPhase === "finding"}
             />
           </div>
 
-          {findPhase !== "done" ? (
+          {/* Button + error */}
+          <div className="mt-5 space-y-3">
             <button onClick={handleFindSources} disabled={findPhase === "finding" || !introText.trim()}
-              className="btn-primary w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all"
+              className="btn-primary w-full h-12 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5"
               style={{ background: "var(--text-primary)" }}>
               {findPhase === "finding"
-                ? <><Spinner size={15} color="white" /> {findMsg}</>
+                ? <><Spinner size={15} color="white" />{findMsg}</>
                 : <>
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" />
                     </svg>
                     Find Sources
+                    <svg className="h-3.5 w-3.5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
                   </>}
             </button>
-          ) : (
-            <button onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
-              className="text-xs transition-colors"
-              style={{ color: "var(--text-tertiary)" }}
-              onMouseEnter={e => (e.currentTarget.style.color = "var(--text-secondary)")}
-              onMouseLeave={e => (e.currentTarget.style.color = "var(--text-tertiary)")}
-            >
-              ← Start over
-            </button>
-          )}
-        </div>
+            {error && <ErrorBanner error={error} />}
+          </div>
+        </main>
+      )}
 
-        {/* ── Sources Panel ── */}
-        {findPhase === "done" && (
-          <div className="space-y-4 fade-in">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                Sources
-                <span className="ml-2 font-normal" style={{ color: "var(--text-tertiary)" }}>
-                  {resolvedSources}/{totalSources} full text
-                </span>
-              </h2>
-              {totalSources === 0 && <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>No citations detected</span>}
+      {/* ── Step 2: Sources ── */}
+      {currentStep === 2 && (
+        <main className="flex-1 max-w-5xl mx-auto w-full px-8 py-10 step-enter">
+          {/* Step header */}
+          <div className="flex items-start justify-between mb-8">
+            <div>
+              <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18] mb-1">Sources</h1>
+              <p className="text-sm text-[#9A9A98]">
+                {resolvedSources} of {totalSources} retrieved
+                {totalSources > 0 && ` · ${Math.round((resolvedSources / totalSources) * 100)}% full text`}
+              </p>
             </div>
+            <button onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
+              className="text-xs text-[#9A9A98] hover:text-[#5A5A58] transition-colors mt-2">
+              ← Back to Draft
+            </button>
+          </div>
 
-            {/* Found */}
-            {resolvedSources > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-semibold uppercase tracking-widest px-1" style={{ color: "var(--text-tertiary)" }}>Retrieved</p>
-                <div className="space-y-1.5">
+          <div className="grid gap-8" style={{ gridTemplateColumns: "1fr 280px" }}>
+            {/* Sources list */}
+            <div className="space-y-5 min-w-0">
+              {resolvedSources > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98] px-1">Retrieved</p>
                   {[...foundSources, ...uploadedSources].map(s => (
-                    <div key={s.citationKey} className="card px-4 py-3 flex items-start gap-3">
+                    <div key={s.citationKey} className="card px-5 py-4 flex items-start gap-3">
                       <span className="text-[#10B981] font-bold text-sm mt-0.5 flex-shrink-0">✓</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: "var(--text-primary)" }}>{s.citationKey}</p>
-                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-tertiary)" }}>{s.title}</p>
+                        <p className="text-sm font-medium truncate text-[#1A1A18]">{s.citationKey}</p>
+                        <p className="text-xs truncate mt-0.5 text-[#9A9A98]">{s.title}</p>
                       </div>
                       <span className="text-[10px] font-medium rounded-full px-2.5 py-1 flex-shrink-0"
                         style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
@@ -696,30 +773,25 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Missing */}
-            {missingSources.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between px-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>
-                    Needs upload ({missingSources.length})
-                  </p>
-                  <button onClick={handleGoogleDrive} disabled={driveLoading}
-                    className="inline-flex items-center gap-1.5 text-xs transition-colors disabled:opacity-50"
-                    style={{ color: "var(--text-secondary)" }}>
-                    {driveLoading ? <Spinner size={12} /> : (
-                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none">
-                        <path d="M4.5 18L8 12l3.5 6H4.5z" fill="#34A853"/>
-                        <path d="M12 6L8 12H16l-4-6z" fill="#4285F4"/>
-                        <path d="M16 12l3.5 6H8.5L12 12h4z" fill="#EA4335"/>
-                      </svg>
-                    )}
-                    Google Drive
-                  </button>
-                </div>
+              )}
+              {missingSources.length > 0 && (
                 <div className="space-y-2">
+                  <div className="flex items-center justify-between px-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">
+                      Needs upload ({missingSources.length})
+                    </p>
+                    <button onClick={handleGoogleDrive} disabled={driveLoading}
+                      className="inline-flex items-center gap-1.5 text-xs text-[#5A5A58] hover:text-[#1A1A18] transition-colors disabled:opacity-50">
+                      {driveLoading ? <Spinner size={12} /> : (
+                        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none">
+                          <path d="M4.5 18L8 12l3.5 6H4.5z" fill="#34A853"/>
+                          <path d="M12 6L8 12H16l-4-6z" fill="#4285F4"/>
+                          <path d="M16 12l3.5 6H8.5L12 12h4z" fill="#EA4335"/>
+                        </svg>
+                      )}
+                      Google Drive
+                    </button>
+                  </div>
                   {missingSources.map(m => (
                     <MissingRow key={m.citationKey} source={m}
                       onUpload={f => handleMissingUpload(f, m.citationKey)}
@@ -727,210 +799,194 @@ export default function Home() {
                       uploading={uploadingKeys.has(m.citationKey)} />
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Verify */}
-            <button onClick={handleVerify} disabled={loading || totalSources === 0}
-              className="btn-primary w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all"
-              style={{ background: "var(--text-primary)" }}>
-              {loading
-                ? <><Spinner size={15} color="white" /> {loadingMsg}</>
-                : <>
-                    Verify all claims
-                    {missingSources.length > 0 && (
-                      <span className="text-xs font-normal opacity-60">
-                        · {missingSources.length} via web search
-                      </span>
-                    )}
-                  </>}
-            </button>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (() => {
-          // Parse raw Anthropic 529 JSON into a friendly message
-          let msg = error;
-          try {
-            const m = error.match(/\{.*\}/s);
-            if (m) {
-              const parsed = JSON.parse(m[0]);
-              if (parsed?.error?.type === "overloaded_error") {
-                msg = "Claude is currently overloaded — please wait a moment and try again.";
-              } else if (parsed?.error?.message) {
-                msg = parsed.error.message;
-              }
-            }
-          } catch { /* keep original */ }
-          const isOverload = msg.includes("overloaded");
-          return (
-            <div className={`card px-4 py-3.5 text-sm flex items-start gap-2.5 ${isOverload ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
-              <span className="text-base mt-0.5 flex-shrink-0">{isOverload ? "⏳" : "⚠"}</span>
-              <div>
-                <span className="font-semibold">{isOverload ? "API busy — " : "Error — "}</span>{msg}
-              </div>
+              )}
+              {totalSources === 0 && (
+                <p className="text-sm text-[#9A9A98] text-center py-16">No citations detected in your draft.</p>
+              )}
             </div>
-          );
-        })()}
 
-        {/* ── Results ── */}
-        {result && (
-          <div className="space-y-6 fade-in">
-
-            {/* Results header */}
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Results</h2>
-              <div className="flex items-center gap-2">
-                {/* View mode toggle */}
-                <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-                  {(["cards", "annotated"] as const).map(mode => (
-                    <button key={mode} onClick={() => { setViewMode(mode); setPopupClaim(null); }}
-                      className="px-3 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
-                      style={{
-                        background: viewMode === mode ? "var(--text-primary)" : "var(--surface)",
-                        color: viewMode === mode ? "white" : "var(--text-secondary)",
-                        borderRight: mode === "cards" ? `1px solid var(--border)` : undefined,
-                      }}>
-                      {mode === "cards"
-                        ? <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Cards</>
-                        : <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>Annotated</>
-                      }
-                    </button>
+            {/* Right panel */}
+            <div className="space-y-4">
+              <div className="card p-5 space-y-4">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
+                <div className="space-y-2.5">
+                  {[
+                    { label: "Total citations", value: totalSources, color: "#1A1A18" },
+                    { label: "Full text", value: resolvedSources, color: "#10B981" },
+                    ...(missingSources.length > 0 ? [{ label: "Need upload", value: missingSources.length, color: "#F59E0B" }] : []),
+                  ].map(row => (
+                    <div key={row.label} className="flex items-center justify-between">
+                      <span className="text-sm text-[#5A5A58]">{row.label}</span>
+                      <span className="text-sm font-semibold" style={{ color: row.color }}>{row.value}</span>
+                    </div>
                   ))}
                 </div>
-                {/* Export buttons */}
-                {(["docx","pdf"] as const).map(fmt => (
-                  <button key={fmt} onClick={() => handleExport(fmt)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
-                    style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
-                  >
-                    <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                    </svg>
-                    {fmt === "docx" ? "Word" : "PDF"}
+                <div className="h-1.5 rounded-full bg-[#F0F0EE] overflow-hidden">
+                  <div className="h-full rounded-full bg-[#10B981] transition-all duration-700"
+                    style={{ width: totalSources > 0 ? `${(resolvedSources / totalSources) * 100}%` : "0%" }} />
+                </div>
+              </div>
+
+              <button onClick={handleVerify} disabled={loading || totalSources === 0}
+                className="btn-primary w-full h-12 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5"
+                style={{ background: "var(--text-primary)" }}>
+                {loading
+                  ? <><Spinner size={15} color="white" />{loadingMsg}</>
+                  : <>
+                      Verify all claims
+                      <svg className="h-3.5 w-3.5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </>}
+              </button>
+              {missingSources.length > 0 && !loading && (
+                <p className="text-[11px] text-[#9A9A98] text-center leading-relaxed">
+                  {missingSources.length} source{missingSources.length > 1 ? "s" : ""} will be searched via web
+                </p>
+              )}
+              {error && <ErrorBanner error={error} />}
+            </div>
+          </div>
+        </main>
+      )}
+
+      {/* ── Step 3: Results ── */}
+      {currentStep === 3 && result && (
+        <main className="flex-1 max-w-5xl mx-auto w-full px-8 py-10 step-enter">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
+              <button
+                onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null); }}
+                className="text-xs text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+                ← Start over
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* View mode toggle */}
+              <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+                {(["cards", "annotated"] as const).map(mode => (
+                  <button key={mode} onClick={() => { setViewMode(mode); setPopupClaim(null); }}
+                    className="px-3 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
+                    style={{
+                      background: viewMode === mode ? "var(--text-primary)" : "var(--surface)",
+                      color: viewMode === mode ? "white" : "var(--text-secondary)",
+                      borderRight: mode === "cards" ? `1px solid var(--border)` : undefined,
+                    }}>
+                    {mode === "cards"
+                      ? <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Cards</>
+                      : <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>Annotated</>
+                    }
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Stat-filter cards (replaces both stats grid and tabs) */}
-            {stats && (() => {
-              const cards: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
-                { key: "ALL",          label: "Total",         value: stats.total,        color: "var(--text-primary)", activeBg: "#F7F7F5", activeBorder: "var(--text-primary)" },
-                { key: "SUPPORTED",    label: "Supported",     value: stats.supported,    color: "#10B981",             activeBg: "#F0FDF4", activeBorder: "#10B981" },
-                { key: "ISSUES",       label: "Issues",        value: stats.issues,       color: "#F59E0B",             activeBg: "#FFFBEB", activeBorder: "#F59E0B" },
-                { key: "NOT_SUPPORTED",label: "Not Supported", value: stats.notSupported, color: "#EF4444",             activeBg: "#FEF2F2", activeBorder: "#EF4444" },
-                { key: "UNVERIFIABLE", label: "Unverifiable",  value: stats.unverifiable, color: "#9CA3AF",             activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
-              ];
-              return (
-                <div className="grid grid-cols-5 gap-3">
-                  {cards.map(c => {
-                    const active = activeTab === c.key;
-                    return (
-                      <button
-                        key={c.key}
-                        onClick={() => setActiveTab(c.key)}
-                        className="card px-3 py-4 text-center transition-all focus:outline-none"
-                        style={{
-                          background: active ? c.activeBg : "var(--surface)",
-                          borderColor: active ? c.activeBorder : "var(--border)",
-                          borderWidth: active ? "1.5px" : "1px",
-                          transform: active ? "translateY(-1px)" : "none",
-                          boxShadow: active ? `0 4px 12px ${c.color}22` : undefined,
-                        }}
-                      >
-                        <div className="text-2xl font-bold tabular-nums" style={{ color: c.color }}>{c.value}</div>
-                        <div className="text-[10px] font-medium mt-1 uppercase tracking-wide" style={{ color: active ? c.color : "var(--text-tertiary)" }}>{c.label}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-            {/* ── Cards view ── */}
-            {viewMode === "cards" && (
-              <div className="space-y-3">
-                {filteredClaims.length === 0
-                  ? <p className="text-sm text-center py-10" style={{ color: "var(--text-tertiary)" }}>No claims in this category.</p>
-                  : filteredClaims.map((claim, i) => (
-                      <ClaimCard key={i} claim={claim} index={result.claims.indexOf(claim)} />
-                    ))
-                }
-              </div>
-            )}
-
-            {/* ── Annotated text view ── */}
-            {viewMode === "annotated" && (
-              <div className="space-y-4">
-                <p className="text-[11px] px-1" style={{ color: "var(--text-tertiary)" }}>
-                  Click any highlighted phrase to see details.
-                </p>
-                <div
-                  className="card p-6 cursor-default"
-                  onClick={() => setPopupClaim(null)}
+              {(["docx","pdf"] as const).map(fmt => (
+                <button key={fmt} onClick={() => handleExport(fmt)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
+                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
                 >
-                  <p className="text-sm text-[#2A2A28] leading-[1.9] whitespace-pre-wrap">
-                    {buildTextSegments(introText, result.claims).map((seg, i) => {
-                      if (seg.type === "text") return <span key={i}>{seg.content}</span>;
-                      const cfg = VERDICT_CONFIG[seg.claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
-                      const isActive = popupClaim?.claim === seg.claim.claim;
-                      return (
-                        <mark
-                          key={i}
-                          onClick={e => handleClaimClick(seg.claim, e)}
-                          style={{
-                            background: isActive ? cfg.badgeBg : `${cfg.badgeBg}99`,
-                            color: "inherit",
-                            borderBottom: `2px solid ${cfg.accent}`,
-                            borderRadius: "2px",
-                            padding: "0 1px",
-                            cursor: "pointer",
-                            transition: "background 0.15s",
-                          }}
-                          title={cfg.label}
-                        >
-                          {seg.content}
-                        </mark>
-                      );
-                    })}
-                  </p>
-                </div>
-
-                {/* Legend */}
-                <div className="flex flex-wrap gap-3 px-1">
-                  {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
-                    <span key={verdict} className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--text-tertiary)" }}>
-                      <span style={{ display: "inline-block", width: 10, height: 10, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 2 }} />
-                      {cfg.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Popup */}
-            {popupClaim && viewMode === "annotated" && (
-              <ClaimInlinePopup claim={popupClaim} style={popupStyle} onClose={() => setPopupClaim(null)} />
-            )}
-
-            {/* Summary */}
-            <div className="card p-5 space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-tertiary)" }}>Overall Assessment</p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{result.summary}</p>
+                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
+                  </svg>
+                  {fmt === "docx" ? "Word" : "PDF"}
+                </button>
+              ))}
             </div>
           </div>
-        )}
-      </main>
 
-      <footer className="mt-20 pb-8">
-        <p className="text-center text-xs" style={{ color: "var(--text-tertiary)" }}>
-          Claim Verifier · localhost:3000
-        </p>
-      </footer>
+          {/* Stat-filter cards */}
+          {stats && (() => {
+            const cards: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
+              { key: "ALL",          label: "Total",         value: stats.total,        color: "var(--text-primary)", activeBg: "#F7F7F5", activeBorder: "var(--text-primary)" },
+              { key: "SUPPORTED",    label: "Supported",     value: stats.supported,    color: "#10B981",             activeBg: "#F0FDF4", activeBorder: "#10B981" },
+              { key: "ISSUES",       label: "Issues",        value: stats.issues,       color: "#F59E0B",             activeBg: "#FFFBEB", activeBorder: "#F59E0B" },
+              { key: "NOT_SUPPORTED",label: "Not Supported", value: stats.notSupported, color: "#EF4444",             activeBg: "#FEF2F2", activeBorder: "#EF4444" },
+              { key: "UNVERIFIABLE", label: "Unverifiable",  value: stats.unverifiable, color: "#9CA3AF",             activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
+            ];
+            return (
+              <div className="grid grid-cols-5 gap-3 mb-6">
+                {cards.map(c => {
+                  const active = activeTab === c.key;
+                  return (
+                    <button key={c.key} onClick={() => setActiveTab(c.key)}
+                      className="card px-3 py-4 text-center transition-all focus:outline-none"
+                      style={{
+                        background: active ? c.activeBg : "var(--surface)",
+                        borderColor: active ? c.activeBorder : "var(--border)",
+                        borderWidth: active ? "1.5px" : "1px",
+                        transform: active ? "translateY(-1px)" : "none",
+                        boxShadow: active ? `0 4px 12px ${c.color}22` : undefined,
+                      }}>
+                      <div className="text-2xl font-bold tabular-nums" style={{ color: c.color }}>{c.value}</div>
+                      <div className="text-[10px] font-medium mt-1 uppercase tracking-wide" style={{ color: active ? c.color : "var(--text-tertiary)" }}>{c.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
+          {/* Cards view */}
+          {viewMode === "cards" && (
+            <div className="space-y-3">
+              {filteredClaims.length === 0
+                ? <p className="text-sm text-center py-10 text-[#9A9A98]">No claims in this category.</p>
+                : filteredClaims.map((claim, i) => (
+                    <ClaimCard key={i} claim={claim} index={result.claims.indexOf(claim)} />
+                  ))
+              }
+            </div>
+          )}
+
+          {/* Annotated text view */}
+          {viewMode === "annotated" && (
+            <div className="space-y-4">
+              <p className="text-[11px] px-1 text-[#9A9A98]">Click any highlighted phrase to see details.</p>
+              <div className="card p-6 cursor-default" onClick={() => setPopupClaim(null)}>
+                <p className="text-sm text-[#2A2A28] leading-[1.9] whitespace-pre-wrap">
+                  {buildTextSegments(introText, result.claims).map((seg, i) => {
+                    if (seg.type === "text") return <span key={i}>{seg.content}</span>;
+                    const cfg = VERDICT_CONFIG[seg.claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
+                    const isActive = popupClaim?.claim === seg.claim.claim;
+                    return (
+                      <mark key={i} onClick={e => handleClaimClick(seg.claim, e)}
+                        style={{ background: isActive ? cfg.badgeBg : `${cfg.badgeBg}99`, color: "inherit",
+                          borderBottom: `2px solid ${cfg.accent}`, borderRadius: "2px", padding: "0 1px",
+                          cursor: "pointer", transition: "background 0.15s" }}
+                        title={cfg.label}>
+                        {seg.content}
+                      </mark>
+                    );
+                  })}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3 px-1">
+                {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
+                  <span key={verdict} className="flex items-center gap-1.5 text-[11px] text-[#9A9A98]">
+                    <span style={{ display: "inline-block", width: 10, height: 10, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 2 }} />
+                    {cfg.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Popup */}
+          {popupClaim && viewMode === "annotated" && (
+            <ClaimInlinePopup claim={popupClaim} style={popupStyle} onClose={() => setPopupClaim(null)} />
+          )}
+
+          {/* Summary */}
+          <div className="card p-5 space-y-2 mt-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98]">Overall Assessment</p>
+            <p className="text-sm leading-relaxed text-[#5A5A58]">{result.summary}</p>
+          </div>
+          {error && <div className="mt-4"><ErrorBanner error={error} /></div>}
+        </main>
+      )}
     </div>
   );
 }

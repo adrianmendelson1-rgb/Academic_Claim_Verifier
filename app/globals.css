@@ -103,6 +103,111 @@ button:disabled {
   opacity: 0.45;
 }
 
+/* ── Step entrance animation ─────────────────────────────────────────────────── */
+@keyframes stepEnter {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.step-enter {
+  animation: stepEnter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Full-screen step container ──────────────────────────────────────────────── */
+.step-full {
+  min-height: calc(100vh - 57px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Input card with label lift ──────────────────────────────────────────────── */
+.input-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1.5px solid #EBEBEA;
+  border-radius: 18px;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+.input-card:focus-within {
+  border-color: #A0A09E;
+  box-shadow: 0 0 0 3.5px rgba(26,26,24,0.07), 0 2px 8px rgba(0,0,0,0.07);
+}
+.input-card.is-filled {
+  border-color: #C8C8C6;
+}
+.input-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 18px 22px 6px;
+  color: #C0C0BE;
+  transition: color 0.18s ease;
+  user-select: none;
+}
+.input-card:focus-within .input-card-label,
+.input-card.is-filled .input-card-label {
+  color: #1A1A18;
+}
+.input-card textarea {
+  flex: 1;
+  padding: 4px 22px 20px;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #2A2A28;
+  resize: none;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  min-height: 220px;
+}
+.input-card textarea::placeholder {
+  color: #C8C8C6;
+}
+.input-card textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Step indicator ──────────────────────────────────────────────────────────── */
+.step-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+.step-dot-pending {
+  border: 1.5px solid #D8D8D6;
+  color: #BBBBB9;
+}
+.step-dot-active {
+  background: #1A1A18;
+  color: white;
+}
+.step-dot-done {
+  background: #10B981;
+  color: white;
+}
+.step-connector {
+  height: 1px;
+  width: 20px;
+  background: #E8E8E6;
+  transition: background 0.3s ease;
+  flex-shrink: 0;
+}
+.step-connector-done {
+  background: #10B981;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
