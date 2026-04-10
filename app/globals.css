@@ -1,26 +1,215 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #F7F7F5;
+  --surface: #FFFFFF;
+  --border: #EBEBEA;
+  --border-strong: #D8D8D6;
+  --text-primary: #1A1A18;
+  --text-secondary: #5A5A58;
+  --text-tertiary: #9A9A98;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
 }
 
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+textarea, input {
+  font-family: inherit;
+}
+
+/* Drop zone active */
+.drop-zone-active {
+  border-color: #6366F1 !important;
+  background-color: #EEF2FF !important;
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 0.75s linear infinite;
+}
+
+/* Fade in */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeUp 0.25s ease-out both;
+}
+
+/* Slide down (for rewrite panel) */
+@keyframes slideDown {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 300px; }
+}
+.slide-down {
+  animation: slideDown 0.2s ease-out both;
+  overflow: hidden;
+}
+
+/* Card base */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Interactive states ─────────────────────────────────────────────────────── */
+
+/* All clickable buttons get a pointer and smooth transition */
+button:not(:disabled),
+a[href],
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+/* Primary full-width CTA buttons (Find Sources / Verify all claims) */
+button.btn-primary:not(:disabled):hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+button.btn-primary:not(:disabled):active {
+  opacity: 0.96;
+  transform: translateY(0);
+}
+
+/* Textarea / input focus: highlight parent card */
+.card:focus-within {
+  border-color: #A8A8A6;
+  box-shadow: 0 0 0 3px rgba(26, 26, 24, 0.07), var(--shadow-card);
+}
+
+/* Textarea cursor */
+textarea, input[type="text"] {
+  cursor: text;
+}
+
+/* Disabled state clarity */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ── Step entrance animation ─────────────────────────────────────────────────── */
+@keyframes stepEnter {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.step-enter {
+  animation: stepEnter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ── Full-screen step container ──────────────────────────────────────────────── */
+.step-full {
+  min-height: calc(100vh - 57px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Input card with label lift ──────────────────────────────────────────────── */
+.input-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1.5px solid #EBEBEA;
+  border-radius: 18px;
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+.input-card:focus-within {
+  border-color: #A0A09E;
+  box-shadow: 0 0 0 3.5px rgba(26,26,24,0.07), 0 2px 8px rgba(0,0,0,0.07);
+}
+.input-card.is-filled {
+  border-color: #C8C8C6;
+}
+.input-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 18px 22px 6px;
+  color: #C0C0BE;
+  transition: color 0.18s ease;
+  user-select: none;
+}
+.input-card:focus-within .input-card-label,
+.input-card.is-filled .input-card-label {
+  color: #1A1A18;
+}
+.input-card textarea {
+  flex: 1;
+  padding: 4px 22px 20px;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1.7;
+  color: #2A2A28;
+  resize: none;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  min-height: 220px;
+}
+.input-card textarea::placeholder {
+  color: #C8C8C6;
+}
+.input-card textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Step indicator ──────────────────────────────────────────────────────────── */
+.step-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+.step-dot-pending {
+  border: 1.5px solid #D8D8D6;
+  color: #BBBBB9;
+}
+.step-dot-active {
+  background: #1A1A18;
+  color: white;
+}
+.step-dot-done {
+  background: #10B981;
+  color: white;
+}
+.step-connector {
+  height: 1px;
+  width: 20px;
+  background: #E8E8E6;
+  transition: background 0.3s ease;
+  flex-shrink: 0;
+}
+.step-connector-done {
+  background: #10B981;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D8D8D6; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #B8B8B6; }
