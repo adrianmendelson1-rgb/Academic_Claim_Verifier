@@ -144,14 +144,41 @@ ${sourcesSection}
 
 Extract every claim+citation pair, verify each one, and return the structured JSON.`;
 
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 16000,
-      system: systemPrompt,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      tools: [{ type: "web_search_20250305", name: "web_search" }] as any,
-      messages: [{ role: "user", content: userMessage }],
-    });
+    // Retry up to 3 times with exponential backoff for 529 overload errors
+    let response: Awaited<ReturnType<typeof client.messages.create>> | null = null;
+    const MAX_RETRIES = 3;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        response = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 16000,
+          system: systemPrompt,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          tools: [{ type: "web_search_20250305", name: "web_search" }] as any,
+          messages: [{ role: "user", content: userMessage }],
+        });
+        break; // success
+      } catch (err: unknown) {
+        const isOverload =
+          (err instanceof Error && err.message.includes("overloaded")) ||
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (err as any)?.status === 529;
+        if (isOverload && attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, (attempt + 1) * 8000)); // 8s, 16s
+          continue;
+        }
+        if (isOverload) {
+          return NextResponse.json(
+            { error: "Claude is currently overloaded. Please wait a moment and try again." },
+            { status: 503 }
+          );
+        }
+        throw err;
+      }
+    }
+    if (!response) {
+      return NextResponse.json({ error: "Failed to get a response after retries." }, { status: 503 });
+    }
 
     // Extract the final text block
     let resultText = "";

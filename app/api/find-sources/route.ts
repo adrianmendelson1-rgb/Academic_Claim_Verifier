@@ -42,12 +42,32 @@ Rules:
 
   const userMessage = `INTRODUCTION TEXT:\n${introText}\n\nREFERENCE LIST:\n${references || "(none provided)"}`;
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userMessage }],
-  });
+  let response: Awaited<ReturnType<typeof client.messages.create>> | null = null;
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      response = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+      });
+      break;
+    } catch (err: unknown) {
+      const isOverload =
+        (err instanceof Error && err.message.includes("overloaded")) ||
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (err as any)?.status === 529;
+      if (isOverload && attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, (attempt + 1) * 6000));
+        continue;
+      }
+      throw isOverload
+        ? new Error("Claude is currently overloaded. Please wait a moment and try again.")
+        : err;
+    }
+  }
+  if (!response) throw new Error("Failed to get a response after retries.");
 
   const raw = response.content.find((b) => b.type === "text")?.text ?? "";
   console.log("[find-sources] Raw citation extraction response:", raw.slice(0, 500));

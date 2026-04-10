@@ -641,7 +641,7 @@ export default function Home() {
 
           {findPhase !== "done" ? (
             <button onClick={handleFindSources} disabled={findPhase === "finding" || !introText.trim()}
-              className="w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all"
               style={{ background: "var(--text-primary)" }}>
               {findPhase === "finding"
                 ? <><Spinner size={15} color="white" /> {findMsg}</>
@@ -732,7 +732,7 @@ export default function Home() {
 
             {/* Verify */}
             <button onClick={handleVerify} disabled={loading || totalSources === 0}
-              className="w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary w-full h-11 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5 transition-all"
               style={{ background: "var(--text-primary)" }}>
               {loading
                 ? <><Spinner size={15} color="white" /> {loadingMsg}</>
@@ -749,11 +749,30 @@ export default function Home() {
         )}
 
         {/* Error */}
-        {error && (
-          <div className="card px-4 py-3.5 border-red-200 bg-red-50 text-sm text-red-700">
-            <span className="font-semibold">Error — </span>{error}
-          </div>
-        )}
+        {error && (() => {
+          // Parse raw Anthropic 529 JSON into a friendly message
+          let msg = error;
+          try {
+            const m = error.match(/\{.*\}/s);
+            if (m) {
+              const parsed = JSON.parse(m[0]);
+              if (parsed?.error?.type === "overloaded_error") {
+                msg = "Claude is currently overloaded — please wait a moment and try again.";
+              } else if (parsed?.error?.message) {
+                msg = parsed.error.message;
+              }
+            }
+          } catch { /* keep original */ }
+          const isOverload = msg.includes("overloaded");
+          return (
+            <div className={`card px-4 py-3.5 text-sm flex items-start gap-2.5 ${isOverload ? "border-amber-200 bg-amber-50 text-amber-800" : "border-red-200 bg-red-50 text-red-700"}`}>
+              <span className="text-base mt-0.5 flex-shrink-0">{isOverload ? "⏳" : "⚠"}</span>
+              <div>
+                <span className="font-semibold">{isOverload ? "API busy — " : "Error — "}</span>{msg}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Results ── */}
         {result && (
