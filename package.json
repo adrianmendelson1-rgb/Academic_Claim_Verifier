@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.86.1",
+    "@supabase/supabase-js": "^2.103.0",
     "docx": "^9.6.1",
     "google-auth-library": "^10.6.2",
     "googleapis": "^171.4.0",

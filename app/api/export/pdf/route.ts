@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
       // Title
       doc.font("Helvetica-Bold").fontSize(22).fillColor("#111827");
-      doc.text("Claim Verification Report", { align: "center" });
+      doc.text("Claim Verification Report", { align: "center", width: pageWidth });
       doc.moveDown(0.3);
 
       doc.font("Helvetica").fontSize(11).fillColor("#6b7280");
@@ -64,13 +64,13 @@ export async function POST(req: NextRequest) {
           month: "long",
           day: "numeric",
         })}`,
-        { align: "center" }
+        { align: "center", width: pageWidth }
       );
       doc.moveDown(1.5);
 
       // Stats row
       doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827");
-      doc.text("Summary Statistics");
+      doc.text("Summary Statistics", 60, doc.y, { width: pageWidth });
       doc.moveDown(0.5);
 
       const stats = [
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
 
       // Claims
       doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827");
-      doc.text("Claim-by-Claim Analysis");
+      doc.text("Claim-by-Claim Analysis", 60, doc.y, { width: pageWidth });
       doc.moveDown(0.5);
 
       claims.forEach((claim, i) => {
@@ -116,39 +116,54 @@ export async function POST(req: NextRequest) {
         const verdictColor = VERDICT_COLORS[claim.verdict] || "#6b7280";
         const verdictLabel = VERDICT_LABELS[claim.verdict] || claim.verdict;
 
-        // Claim header
+        // Bug 3 fix: claim header with { continued: true } — use explicit coords on the
+        // continued segment and then reset to explicit coords on the very next text call
+        // so the x cursor doesn't drift after the chain ends.
         doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827");
-        doc.text(`Claim ${i + 1}  `, { continued: true });
-        doc.fillColor(verdictColor).text(verdictLabel);
+        doc.text(`Claim ${i + 1}  `, 60, doc.y, { continued: true, width: pageWidth });
+        doc.fillColor(verdictColor).text(verdictLabel, { width: pageWidth });
         doc.moveDown(0.3);
+
+        // Bug 1 fix: always pass explicit x + { width: pageWidth } after the stats-box
+        // manual doc.y positioning so the cursor can't drift.
 
         // Claim text
         doc.font("Helvetica-Oblique").fontSize(10).fillColor("#374151");
-        doc.text(`"${claim.claim}"`);
+        doc.text(`"${claim.claim}"`, 60, doc.y, { width: pageWidth });
         doc.moveDown(0.3);
 
-        // Citation + source
-        doc.font("Helvetica-Bold").fontSize(9).fillColor("#6b7280");
-        doc.text(`Citation: `, { continued: true });
-        doc.font("Helvetica").text(claim.citation, { continued: true });
-        doc.font("Helvetica-Bold").text(`   |   Source: `, { continued: true });
-        doc.font("Helvetica").text(claim.source_accessed);
+        // Bug 4 fix: replace the fragile multi-continued citation/source chain with a
+        // single combined string in one font/color call.
+        const citationLine = `Citation: ${claim.citation}   |   Source: ${claim.source_accessed}`;
+        doc.font("Helvetica").fontSize(9).fillColor("#6b7280");
+        doc.text(citationLine, 60, doc.y, { width: pageWidth });
         doc.moveDown(0.3);
 
-        // Why
+        // Why — keep the continued chain but follow it with explicit coords
         doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151");
-        doc.text("Assessment: ", { continued: true });
-        doc.font("Helvetica").text(claim.why);
+        doc.text("Assessment: ", 60, doc.y, { continued: true, width: pageWidth });
+        doc.font("Helvetica").text(claim.why, { width: pageWidth });
         doc.moveDown(0.3);
 
-        // Fix
+        // Bug 2 fix: dynamic fix-box height instead of hardcoded 40px
         if (claim.fix && claim.fix !== "none needed") {
           const fixY = doc.y;
-          doc.rect(60, fixY, pageWidth, 40).fillColor("#eff6ff").fill();
+          const fullFixText = `Suggested Fix:  ${claim.fix}`;
+
+          // Measure height with the body font at the text's actual width, then add padding
+          doc.font("Helvetica").fontSize(9);
+          const textH = doc.heightOfString(fullFixText, { width: pageWidth - 20 });
+          const dynamicHeight = textH + 16; // 8px top + 8px bottom padding
+
+          doc.rect(60, fixY, pageWidth, dynamicHeight).fillColor("#eff6ff").fill();
+
+          // Render label in bold, then the rest of the fix text inline
           doc.font("Helvetica-Bold").fontSize(9).fillColor("#1d4ed8");
-          doc.text("Suggested Fix: ", 65, fixY + 8, { continued: true });
+          doc.text("Suggested Fix: ", 65, fixY + 8, { continued: true, width: pageWidth - 10 });
           doc.font("Helvetica").fillColor("#1e40af").text(claim.fix, { width: pageWidth - 10 });
-          doc.y = fixY + 48;
+
+          // Bug 2 fix: advance past the box using the measured height
+          doc.y = fixY + dynamicHeight + 4;
         }
 
         doc.moveDown(0.5);
@@ -160,10 +175,10 @@ export async function POST(req: NextRequest) {
       if (doc.y > doc.page.height - 150) doc.addPage();
 
       doc.font("Helvetica-Bold").fontSize(14).fillColor("#111827");
-      doc.text("Overall Summary");
+      doc.text("Overall Summary", 60, doc.y, { width: pageWidth });
       doc.moveDown(0.5);
       doc.font("Helvetica").fontSize(10).fillColor("#374151");
-      doc.text(summary);
+      doc.text(summary, 60, doc.y, { width: pageWidth });
 
       doc.end();
     });
