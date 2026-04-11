@@ -4,11 +4,11 @@ import { extractText } from "unpdf";
 
 export const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
-function wordCount(text: string): number {
+export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function truncate(text: string, maxWords = 2000): string {
+export function truncate(text: string, maxWords = 2000): string {
   const words = text.trim().split(/\s+/);
   return words.length <= maxWords ? text : words.slice(0, maxWords).join(" ");
 }
@@ -42,6 +42,21 @@ export async function extractTextFromBase64(
 ): Promise<{ text: string; wordCount: number }> {
   const buf = new Uint8Array(Buffer.from(base64, "base64"));
   return extractFromBuffer(buf);
+}
+
+/**
+ * Extract text from a base64-encoded .docx string using mammoth.
+ */
+export async function extractDocxFromBase64(
+  base64: string
+): Promise<{ text: string; wordCount: number }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mammoth = require("mammoth");
+  const buf = Buffer.from(base64, "base64");
+  const result = await mammoth.extractRawText({ buffer: buf });
+  const text = result.value as string;
+  const wc = wordCount(text);
+  return { text, wordCount: wc };
 }
 
 // ── Semantic Scholar ──────────────────────────────────────────────────────────

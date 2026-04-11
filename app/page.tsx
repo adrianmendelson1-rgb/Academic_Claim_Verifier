@@ -273,11 +273,11 @@ function MissingRow({ source, onUpload, uploadError, uploading, openMenuKey, set
           ${dragging ? "border-indigo-400 bg-indigo-50" : "border-[#EBEBEA] hover:border-[#D8D8D6] hover:bg-[#F7F7F5]"}
           ${uploading ? "opacity-50 pointer-events-none" : ""}`}
       >
-        <input ref={inputRef} type="file" accept=".pdf,application/pdf" className="hidden"
+        <input ref={inputRef} type="file" accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); }} />
         {uploading
           ? <span className="inline-flex items-center gap-2 text-[#9A9A98]"><Spinner size={12} /> Extracting text…</span>
-          : <span className="text-[#9A9A98]">Drop PDF or <span className="text-[#5A5A58] font-medium underline underline-offset-2">browse</span></span>
+          : <span className="text-[#9A9A98]">Drop PDF/DOCX or <span className="text-[#5A5A58] font-medium underline underline-offset-2">browse</span></span>
         }
       </div>
       {uploadError && <p className="text-xs text-red-600 leading-relaxed">{uploadError}</p>}
@@ -486,8 +486,327 @@ declare global {
   }
 }
 
+// ─── Landing Screen ───────────────────────────────────────────────────────────
+function LandingScreen({ onUpload, onPaste }: { onUpload: () => void; onPaste: () => void }) {
+  const cardResting = "0 2px 12px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)";
+  const cardHover   = "0 24px 60px rgba(0,0,0,0.13), 0 8px 20px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06)";
+
+  const cardStyle: React.CSSProperties = {
+    boxShadow: cardResting,
+    padding: "44px 44px 52px",
+    background: "rgba(255,255,255,0.84)",
+    backdropFilter: "blur(16px)",
+    WebkitBackdropFilter: "blur(16px)",
+    transition: "transform 0.22s cubic-bezier(0.34,1.4,0.64,1), box-shadow 0.22s ease, background 0.22s ease",
+    minHeight: 300,
+  };
+
+  const handleEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = "translateY(-8px) scale(1.018)";
+    e.currentTarget.style.boxShadow = cardHover;
+    e.currentTarget.style.background = "rgba(255,255,255,0.96)";
+  };
+  const handleLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.transform = "translateY(0) scale(1)";
+    e.currentTarget.style.boxShadow = cardResting;
+    e.currentTarget.style.background = "rgba(255,255,255,0.82)";
+  };
+
+  return (
+    <div
+      className="relative min-h-screen flex flex-col overflow-hidden screen-enter"
+      style={{ background: "#ECEAE4" }}
+    >
+      {/* Background: verdict-color radial glows — punchy but elegant */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: [
+          "radial-gradient(ellipse 75% 60% at 3% 8%,  rgba(16,185,129,0.15) 0%, transparent 60%)",
+          "radial-gradient(ellipse 70% 55% at 97% 95%, rgba(139,92,246,0.14) 0%, transparent 58%)",
+          "radial-gradient(ellipse 60% 45% at 96% 5%,  rgba(245,158,11,0.11) 0%, transparent 55%)",
+          "radial-gradient(ellipse 55% 45% at 3% 93%,  rgba(239,68,68,0.09) 0%, transparent 55%)",
+          "radial-gradient(ellipse 90% 70% at 50% 50%, rgba(255,253,250,0.55) 0%, transparent 70%)",
+        ].join(", "),
+      }} />
+
+      {/* Powered by Claude */}
+      <div className="absolute top-5 right-8 z-10">
+        <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
+      </div>
+
+      {/* Hero — title near top */}
+      <div className="relative text-center px-8 pt-[8vh] pb-0 z-10">
+        <h1 className="font-bold tracking-tight text-[#1A1A18] leading-[1.08] mb-4"
+          style={{ fontSize: "clamp(38px, 5vw, 58px)" }}>
+          Academic Claim Verifier
+        </h1>
+        <p className="text-[17px] leading-relaxed" style={{ color: "#6A6A68" }}>
+          Verify every claim in your paper against its cited source — automatically.
+        </p>
+      </div>
+
+      {/* Cards — centered in remaining space */}
+      <div className="relative flex-1 flex items-center justify-center px-10 pb-[4vh] z-10">
+        <div className="grid grid-cols-2 w-full" style={{ maxWidth: 900, gap: 28 }}>
+
+          {/* Upload document */}
+          <button
+            onClick={onUpload}
+            className="text-left rounded-3xl"
+            style={cardStyle}
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
+          >
+            <div className="mb-7 rounded-2xl flex items-center justify-center"
+              style={{ height: 68, width: 68, background: "rgba(16,185,129,0.12)", color: "#059669" }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+            </div>
+            <p className="text-[20px] font-bold text-[#1A1A18] mb-2.5 tracking-tight">Upload document</p>
+            <p className="text-[14px] leading-relaxed" style={{ color: "#6A6A68" }}>
+              Upload a PDF or Word doc — we'll extract the text and pre-fill your draft automatically.
+            </p>
+          </button>
+
+          {/* Paste manually */}
+          <button
+            onClick={onPaste}
+            className="text-left rounded-3xl"
+            style={cardStyle}
+            onMouseEnter={handleEnter}
+            onMouseLeave={handleLeave}
+          >
+            <div className="mb-7 rounded-2xl flex items-center justify-center"
+              style={{ height: 68, width: 68, background: "rgba(139,92,246,0.11)", color: "#7C3AED" }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+              </svg>
+            </div>
+            <p className="text-[20px] font-bold text-[#1A1A18] mb-2.5 tracking-tight">Paste manually</p>
+            <p className="text-[14px] leading-relaxed" style={{ color: "#6A6A68" }}>
+              Paste your draft text and reference list directly into the editor.
+            </p>
+          </button>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Upload Screen ─────────────────────────────────────────────────────────────
+function isRefParagraph(p: string): boolean {
+  const t = p.trim();
+  if (t.length < 20) return false;
+  // Numbered: "1. Author" or "[1] Author"
+  if (/^(\[\d+\]|\d+\.\s)/.test(t)) return true;
+  // Contains DOI or arXiv URL — very strong signal
+  if (/https?:\/\/doi\.org\/|arxiv\.org|arXiv\s+preprint|doi:\s*10\./i.test(t)) return true;
+  // APA surname pattern — allows hyphens AND a second capitalised word (e.g. "Ben-Zion" or "Hadar Shoval")
+  // Surname = UpperLetter + (lower|upper|hyphen)+ with optional " UpperLetter(lower|upper|hyphen)+"
+  const surnamePat = /^[A-ZÀ-Ü][A-Za-zÀ-ÿ\-]+(\s[A-ZÀ-Ü][A-Za-zÀ-ÿ\-]+)?,\s[A-Z]/;
+  if (surnamePat.test(t) && /\(\d{4}\)/.test(t)) return true;
+  return false;
+}
+
+function splitDraftAndReferences(text: string): { draft: string; references: string | null } {
+  // 1. Try splitting at a reference section heading (unchanged — works perfectly)
+  const headingPat = /\n[ \t]*(References|Bibliography|Works Cited|Literature Cited|Reference List)[ \t]*\n/i;
+  const match = text.match(headingPat);
+  if (match && match.index != null) {
+    const draft = text.slice(0, match.index).trim();
+    const refsBlock = text.slice(match.index + match[0].length).trim();
+    if (draft.length > 100 && refsBlock.length > 30) {
+      return { draft, references: refsBlock };
+    }
+  }
+
+  // 2. No heading — find the first paragraph that looks like a ref, then confirm
+  //    that the majority of what follows is also refs (prevents mid-body false splits)
+  const paragraphs = text.split(/\n\s*\n/);
+  for (let i = 1; i < paragraphs.length; i++) {
+    if (!isRefParagraph(paragraphs[i])) continue;
+    // Check: of the paragraphs from i onward, how many are refs?
+    const tail = paragraphs.slice(i);
+    const refCount = tail.filter(p => isRefParagraph(p)).length;
+    if (refCount / tail.length >= 0.6) {
+      const bodyPart = paragraphs.slice(0, i).join("\n\n").trim();
+      if (bodyPart.length > 100) {
+        return { draft: bodyPart, references: tail.join("\n\n").trim() };
+      }
+    }
+  }
+
+  return { draft: text, references: null };
+}
+
+function UploadScreen({
+  onBack, onComplete, onPasteManually,
+}: {
+  onBack: () => void;
+  onComplete: (draft: string, references: string | null) => void;
+  onPasteManually: () => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [unreadable, setUnreadable] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = async (file: File) => {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf");
+    const isDocx = file.name.toLowerCase().endsWith(".docx");
+    if (!isPdf && !isDocx) {
+      setError("Please upload a PDF or Word (.docx) file."); return;
+    }
+    setUploading(true); setError(null); setUnreadable(false);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64, name: file.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Extraction failed");
+      const { draft, references } = splitDraftAndReferences(data.text);
+      if (references === null) {
+        setUnreadable(true);
+        return;
+      }
+      onComplete(draft, references);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not extract text from this file.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen flex flex-col screen-enter"
+      style={{ background: "var(--background)" }}>
+      {/* Powered by Claude */}
+      <div className="absolute top-5 right-8 z-10">
+        <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
+      </div>
+
+      {/* Back */}
+      <div className="absolute top-4 left-6 z-10">
+        <button onClick={onBack}
+          className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium transition-all"
+          style={{ color: "var(--text-secondary)" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--border)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}>
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back
+        </button>
+      </div>
+
+      {/* Full-height centered layout */}
+      <div className="flex-1 flex flex-col items-center justify-center px-8 py-16">
+        <div className="text-center mb-10">
+          <h1 className="text-[36px] font-bold tracking-tight text-[#1A1A18] mb-2.5">Upload your paper</h1>
+          <p className="text-[16px] text-[#9A9A98]">We'll extract the text and pre-fill your draft.</p>
+        </div>
+
+        {/* Drop zone — fills available width, tall */}
+        <div
+          onClick={() => !uploading && inputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={e => {
+            e.preventDefault(); setDragging(false);
+            const f = e.dataTransfer.files[0];
+            if (f) handleFile(f);
+          }}
+          className="rounded-3xl border-2 border-dashed flex flex-col items-center justify-center transition-all select-none"
+          style={{
+            width: "100%",
+            maxWidth: 680,
+            height: 420,
+            cursor: uploading ? "default" : "pointer",
+            borderColor: dragging ? "#A0A09E" : "var(--border-strong)",
+            background: dragging ? "#F0F0EE" : "var(--surface)",
+            boxShadow: dragging ? "0 0 0 4px rgba(160,160,158,0.12)" : "var(--shadow-card)",
+          }}
+        >
+          <input ref={inputRef} type="file" accept=".pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+
+          {uploading ? (
+            <div className="flex flex-col items-center gap-4">
+              <Spinner size={36} color="#9A9A98" />
+              <p className="text-[16px] text-[#9A9A98]">Extracting text…</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4 text-center px-10">
+              <div className="h-20 w-20 rounded-2xl flex items-center justify-center mb-2"
+                style={{ background: "rgba(16,185,129,0.08)", color: "#059669" }}>
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+              </div>
+              <p className="text-[18px] font-semibold text-[#1A1A18]">Drop your document here</p>
+              <p className="text-[14px] text-[#9A9A98]">
+                or <span className="text-[#5A5A58] underline underline-offset-2 font-medium">browse files</span>
+              </p>
+              <p className="text-[12px] text-[#C0C0BE] mt-1">PDF or Word (.docx)</p>
+            </div>
+          )}
+        </div>
+
+        {error && (
+          <div className="mt-5 rounded-xl border px-4 py-3 text-[13px] text-[#B54040] max-w-[680px] w-full"
+            style={{ borderColor: "#FECACA", background: "#FEF2F2" }}>
+            {error}
+          </div>
+        )}
+
+        {unreadable && (
+          <div className="mt-5 rounded-xl border px-5 py-4 max-w-[680px] w-full"
+            style={{ borderColor: "#FDE68A", background: "#FFFBEB" }}>
+            <p className="text-[14px] font-semibold text-[#92400E] mb-1">Couldn&apos;t read document structure</p>
+            <p className="text-[13px] text-[#B45309] mb-3">
+              The document text was extracted but we couldn&apos;t identify a clear draft and reference list. Please paste your text manually.
+            </p>
+            <button
+              onClick={onPasteManually}
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold transition-all"
+              style={{ background: "#1A1A18", color: "white" }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = "0.85"; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}>
+              Paste manually
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 export default function Home() {
+  const [screen, setScreen] = useState<"landing" | "upload" | "app">("landing");
+
   const [introText, setIntroText]   = useState("");
   const [references, setReferences] = useState("");
 
@@ -637,7 +956,7 @@ export default function Home() {
 
       const original = missingSources.find(m => m.citationKey === citationKey);
       const newSource: FoundSource = {
-        citationKey, title: original?.title ?? file.name.replace(/\.pdf$/i, ""),
+        citationKey, title: original?.title ?? file.name.replace(/\.(pdf|docx)$/i, ""),
         year: original?.year, accessLevel: "Full text", text: data.text, source: "uploaded",
       };
       setUploadedSources(p => [...p.filter(s => s.citationKey !== citationKey), newSource]);
@@ -873,28 +1192,54 @@ export default function Home() {
   const currentStep: 1 | 2 | 3 = result ? 3 : findPhase === "done" ? 2 : 1;
 
   // ─────────────────────────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
+  if (screen === "landing") {
+    return (
+      <LandingScreen
+        onUpload={() => setScreen("upload")}
+        onPaste={() => setScreen("app")}
+      />
+    );
+  }
 
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
-        style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
-        <div className="max-w-7xl mx-auto pr-10 h-14 flex items-center justify-between">
-          <span className="text-[24px] font-semibold text-[#1A1A18] tracking-tight -ml-10">Claim Verifier</span>
-          <StepIndicator current={currentStep} />
+  if (screen === "upload") {
+    return (
+      <UploadScreen
+        onBack={() => setScreen("landing")}
+        onComplete={(draft, refs) => { setIntroText(draft); if (refs) setReferences(refs); setScreen("app"); }}
+        onPasteManually={() => setScreen("app")}
+      />
+    );
+  }
+
+  if (screen === "app" && currentStep === 1) {
+    return (
+      <div className="relative min-h-screen flex flex-col screen-enter" style={{ background: "var(--background)" }}>
+        {/* Powered by Claude */}
+        <div className="absolute top-5 right-8 z-10">
           <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
-        <div className="h-px w-full" style={{ background: "#1A1A18" }} />
-      </header>
 
-      {/* ── Step 1: Draft + References ── */}
-      {currentStep === 1 && (
-        <main className="flex-1 flex flex-col max-w-7xl mx-auto w-full px-10 pt-12 pb-8 step-enter">
+        {/* Back button */}
+        <div className="absolute top-4 left-6 z-10">
+          <button
+            onClick={() => setScreen("landing")}
+            className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] font-medium transition-all"
+            style={{ color: "var(--text-secondary)", background: "transparent" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--border)"; e.currentTarget.style.color = "var(--text-primary)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--text-secondary)"; }}>
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        </div>
+
+        <div className="flex-1 flex flex-col max-w-7xl mx-auto w-full px-10 pb-8" style={{ paddingTop: "80px" }}>
           <div className="mb-8">
-            <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-2">
-              Verify your academic claims
+            <h1 className="text-[36px] font-bold tracking-tight text-[#1A1A18] mb-2.5">
+              Paste your draft
             </h1>
-            <p className="text-[15px] text-[#9A9A98]">
+            <p className="text-[16px] text-[#9A9A98]">
               Paste your draft and reference list — we&apos;ll verify every claim against its cited source.
             </p>
           </div>
@@ -934,8 +1279,24 @@ export default function Home() {
             </button>
             {error && <ErrorBanner error={error} />}
           </div>
-        </main>
-      )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--background)" }}>
+
+      {/* ── Header ── */}
+      <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
+        style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
+        <div className="max-w-7xl mx-auto pr-10 h-14 flex items-center justify-between">
+          <span className="text-[24px] font-semibold text-[#1A1A18] tracking-tight -ml-10">Claim Verifier</span>
+          <StepIndicator current={currentStep} />
+          <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
+        </div>
+        <div className="h-px w-full" style={{ background: "linear-gradient(90deg, #10B981 0%, #1A1A18 35%, #1A1A18 65%, #8B5CF6 100%)", opacity: 0.85 }} />
+      </header>
 
       {/* ── Step 2: Sources ── */}
       {currentStep === 2 && (
