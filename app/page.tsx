@@ -341,21 +341,21 @@ function ClaimInlinePopup({ claim, style, onClose }: {
 
   return (
     <div
-      style={{ ...style, maxHeight: "70vh", overflowY: "auto" }}
-      className="bg-white rounded-2xl border shadow-2xl p-4 space-y-3 text-left"
+      style={{ ...style, maxHeight: "72vh", overflowY: "auto" }}
+      className="bg-white rounded-2xl border shadow-2xl p-5 space-y-4 text-left"
       onClick={e => e.stopPropagation()}
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <Badge config={cfg} />
-        <button onClick={onClose} className="text-[#BBBBB9] hover:text-[#5A5A58] text-xl leading-none transition-colors flex-shrink-0">×</button>
+        <button onClick={onClose} className="text-[#BBBBB9] hover:text-[#5A5A58] text-2xl leading-none transition-colors flex-shrink-0">×</button>
       </div>
 
       {/* Claim snippet */}
-      <p className="text-xs text-[#9A9A98] italic leading-relaxed line-clamp-2">&ldquo;{claim.claim}&rdquo;</p>
+      <p className="text-[13px] text-[#9A9A98] italic leading-relaxed line-clamp-3 border-l-2 pl-3" style={{ borderColor: cfg.accent }}>&ldquo;{claim.claim}&rdquo;</p>
 
       {/* Why */}
-      <p className="text-sm text-[#4A4A48] leading-relaxed">{claim.why}</p>
+      <p className="text-[14px] text-[#3A3A38] leading-relaxed">{claim.why}</p>
 
       {/* Referenced source */}
       {claim.citation && claim.citation !== "No citation" && (
@@ -525,9 +525,9 @@ export default function Home() {
     e.stopPropagation();
     if (popupClaim?.claim === claim.claim) { setPopupClaim(null); return; }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const w = 340;
+    const w = 480;
     const left = Math.max(16, Math.min(rect.left, window.innerWidth - w - 16));
-    const top = rect.bottom + 8;
+    const top = rect.bottom + 10;
     setPopupStyle({ position: "fixed", top, left, width: w, zIndex: 50 });
     setPopupClaim(claim);
   }, [popupClaim]);
@@ -663,7 +663,7 @@ export default function Home() {
       {/* ── Header ── */}
       <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
         style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
-        <div className="max-w-5xl mx-auto px-8 h-14 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-10 h-14 flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-lg bg-[#1A1A18] flex items-center justify-center flex-shrink-0">
@@ -684,19 +684,19 @@ export default function Home() {
 
       {/* ── Step 1: Draft + References ── */}
       {currentStep === 1 && (
-        <main className="flex-1 flex flex-col max-w-5xl mx-auto w-full px-8 pt-10 pb-8 step-enter">
+        <main className="flex-1 flex flex-col max-w-7xl mx-auto w-full px-10 pt-12 pb-8 step-enter">
           {/* Hero */}
-          <div className="mb-6">
-            <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18] mb-1.5">
+          <div className="mb-8">
+            <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-2">
               Verify your academic claims
             </h1>
-            <p className="text-sm text-[#9A9A98]">
+            <p className="text-[15px] text-[#9A9A98]">
               Paste your draft and reference list — we'll verify every claim against its cited source.
             </p>
           </div>
 
           {/* Two-column inputs — grow to fill available height */}
-          <div className="grid grid-cols-2 gap-4" style={{ flex: 1, minHeight: 0 }}>
+          <div className="grid grid-cols-2 gap-5" style={{ flex: 1, minHeight: 0 }}>
             <InputCard
               label="Draft"
               value={introText}
@@ -716,7 +716,7 @@ export default function Home() {
           {/* Button + error */}
           <div className="mt-5 space-y-3">
             <button onClick={handleFindSources} disabled={findPhase === "finding" || !introText.trim()}
-              className="btn-primary w-full h-12 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5"
+              className="btn-primary w-full h-14 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2.5"
               style={{ background: "var(--text-primary)" }}>
               {findPhase === "finding"
                 ? <><Spinner size={15} color="white" />{findMsg}</>
@@ -737,36 +737,38 @@ export default function Home() {
 
       {/* ── Step 2: Sources ── */}
       {currentStep === 2 && (
-        <main className="flex-1 max-w-5xl mx-auto w-full px-8 py-10 step-enter">
+        <main className="flex-1 max-w-7xl mx-auto w-full px-10 py-12 step-enter">
           {/* Step header */}
-          <div className="flex items-start justify-between mb-8">
+          <div className="flex items-start justify-between mb-10">
             <div>
-              <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18] mb-1">Sources</h1>
-              <p className="text-sm text-[#9A9A98]">
+              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-1.5">Sources</h1>
+              <p className="text-[15px] text-[#9A9A98]">
                 {resolvedSources} of {totalSources} retrieved
                 {totalSources > 0 && ` · ${Math.round((resolvedSources / totalSources) * 100)}% full text`}
               </p>
             </div>
             <button onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
-              className="text-xs text-[#9A9A98] hover:text-[#5A5A58] transition-colors mt-2">
+              className="text-sm text-[#9A9A98] hover:text-[#5A5A58] transition-colors mt-2">
               ← Back to Draft
             </button>
           </div>
 
-          <div className="grid gap-8" style={{ gridTemplateColumns: "1fr 280px" }}>
+          <div className="grid gap-10" style={{ gridTemplateColumns: "1fr 380px" }}>
             {/* Sources list */}
-            <div className="space-y-5 min-w-0">
+            <div className="space-y-6 min-w-0">
               {resolvedSources > 0 && (
-                <div className="space-y-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98] px-1">Retrieved</p>
+                <div className="space-y-2.5">
+                  <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98] px-1 mb-3">Retrieved</p>
                   {[...foundSources, ...uploadedSources].map(s => (
-                    <div key={s.citationKey} className="card px-5 py-4 flex items-start gap-3">
-                      <span className="text-[#10B981] font-bold text-sm mt-0.5 flex-shrink-0">✓</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate text-[#1A1A18]">{s.citationKey}</p>
-                        <p className="text-xs truncate mt-0.5 text-[#9A9A98]">{s.title}</p>
+                    <div key={s.citationKey} className="card px-6 py-5 flex items-start gap-4">
+                      <div className="h-6 w-6 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[#10B981] font-bold text-[10px]">✓</span>
                       </div>
-                      <span className="text-[10px] font-medium rounded-full px-2.5 py-1 flex-shrink-0"
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#1A1A18] mb-0.5">{s.citationKey}</p>
+                        <p className="text-[13px] text-[#9A9A98] leading-snug">{s.title}</p>
+                      </div>
+                      <span className="text-[11px] font-medium rounded-full px-3 py-1 flex-shrink-0 mt-0.5"
                         style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
                         {SOURCE_LABELS[s.source ?? ""] ?? s.source}
                       </span>
@@ -801,46 +803,46 @@ export default function Home() {
                 </div>
               )}
               {totalSources === 0 && (
-                <p className="text-sm text-[#9A9A98] text-center py-16">No citations detected in your draft.</p>
+                <p className="text-[15px] text-[#9A9A98] text-center py-20">No citations detected in your draft.</p>
               )}
             </div>
 
             {/* Right panel */}
-            <div className="space-y-4">
-              <div className="card p-5 space-y-4">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
-                <div className="space-y-2.5">
+            <div className="space-y-5">
+              <div className="card p-6 space-y-5">
+                <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
+                <div className="space-y-4">
                   {[
                     { label: "Total citations", value: totalSources, color: "#1A1A18" },
                     { label: "Full text", value: resolvedSources, color: "#10B981" },
                     ...(missingSources.length > 0 ? [{ label: "Need upload", value: missingSources.length, color: "#F59E0B" }] : []),
                   ].map(row => (
                     <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-sm text-[#5A5A58]">{row.label}</span>
-                      <span className="text-sm font-semibold" style={{ color: row.color }}>{row.value}</span>
+                      <span className="text-[15px] text-[#5A5A58]">{row.label}</span>
+                      <span className="text-[15px] font-bold tabular-nums" style={{ color: row.color }}>{row.value}</span>
                     </div>
                   ))}
                 </div>
-                <div className="h-1.5 rounded-full bg-[#F0F0EE] overflow-hidden">
+                <div className="h-2 rounded-full bg-[#F0F0EE] overflow-hidden">
                   <div className="h-full rounded-full bg-[#10B981] transition-all duration-700"
                     style={{ width: totalSources > 0 ? `${(resolvedSources / totalSources) * 100}%` : "0%" }} />
                 </div>
               </div>
 
               <button onClick={handleVerify} disabled={loading || totalSources === 0}
-                className="btn-primary w-full h-12 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2.5"
+                className="btn-primary w-full h-14 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2.5"
                 style={{ background: "var(--text-primary)" }}>
                 {loading
                   ? <><Spinner size={15} color="white" />{loadingMsg}</>
                   : <>
                       Verify all claims
-                      <svg className="h-3.5 w-3.5 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-4 w-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
                       </svg>
                     </>}
               </button>
               {missingSources.length > 0 && !loading && (
-                <p className="text-[11px] text-[#9A9A98] text-center leading-relaxed">
+                <p className="text-[12px] text-[#9A9A98] text-center leading-relaxed">
                   {missingSources.length} source{missingSources.length > 1 ? "s" : ""} will be searched via web
                 </p>
               )}
@@ -852,14 +854,14 @@ export default function Home() {
 
       {/* ── Step 3: Results ── */}
       {currentStep === 3 && result && (
-        <main className="flex-1 max-w-5xl mx-auto w-full px-8 py-10 step-enter">
+        <main className="flex-1 max-w-7xl mx-auto w-full px-10 py-12 step-enter">
           {/* Header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-4">
-              <h1 className="text-[26px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
+              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
               <button
                 onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null); }}
-                className="text-xs text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+                className="text-sm text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
                 ← Start over
               </button>
             </div>
@@ -897,8 +899,8 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Stat-filter cards */}
-          {stats && (() => {
+          {/* Stat-filter cards — hidden in annotated mode */}
+          {stats && viewMode === "cards" && (() => {
             const cards: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
               { key: "ALL",          label: "Total",         value: stats.total,        color: "var(--text-primary)", activeBg: "#F7F7F5", activeBorder: "var(--text-primary)" },
               { key: "SUPPORTED",    label: "Supported",     value: stats.supported,    color: "#10B981",             activeBg: "#F0FDF4", activeBorder: "#10B981" },
@@ -907,12 +909,12 @@ export default function Home() {
               { key: "UNVERIFIABLE", label: "Unverifiable",  value: stats.unverifiable, color: "#9CA3AF",             activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
             ];
             return (
-              <div className="grid grid-cols-5 gap-3 mb-6">
+              <div className="grid grid-cols-5 gap-3 mb-8">
                 {cards.map(c => {
                   const active = activeTab === c.key;
                   return (
                     <button key={c.key} onClick={() => setActiveTab(c.key)}
-                      className="card px-3 py-4 text-center transition-all focus:outline-none"
+                      className="card px-4 py-3 text-center transition-all focus:outline-none"
                       style={{
                         background: active ? c.activeBg : "var(--surface)",
                         borderColor: active ? c.activeBorder : "var(--border)",
@@ -920,8 +922,8 @@ export default function Home() {
                         transform: active ? "translateY(-1px)" : "none",
                         boxShadow: active ? `0 4px 12px ${c.color}22` : undefined,
                       }}>
-                      <div className="text-2xl font-bold tabular-nums" style={{ color: c.color }}>{c.value}</div>
-                      <div className="text-[10px] font-medium mt-1 uppercase tracking-wide" style={{ color: active ? c.color : "var(--text-tertiary)" }}>{c.label}</div>
+                      <div className="text-[22px] font-bold tabular-nums leading-none" style={{ color: c.color }}>{c.value}</div>
+                      <div className="text-[10px] font-semibold mt-1.5 uppercase tracking-wider" style={{ color: active ? c.color : "var(--text-tertiary)" }}>{c.label}</div>
                     </button>
                   );
                 })}
@@ -943,10 +945,22 @@ export default function Home() {
 
           {/* Annotated text view */}
           {viewMode === "annotated" && (
-            <div className="space-y-4">
-              <p className="text-[11px] px-1 text-[#9A9A98]">Click any highlighted phrase to see details.</p>
-              <div className="card p-6 cursor-default" onClick={() => setPopupClaim(null)}>
-                <p className="text-sm text-[#2A2A28] leading-[1.9] whitespace-pre-wrap">
+            <div className="space-y-5">
+              {/* Annotated header bar: hint + legend */}
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <p className="text-sm text-[#9A9A98]">Click any highlighted phrase to see details.</p>
+                <div className="flex flex-wrap items-center gap-4">
+                  {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
+                    <span key={verdict} className="flex items-center gap-1.5 text-xs text-[#6A6A68] font-medium">
+                      <span style={{ display: "inline-block", width: 11, height: 11, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 3, flexShrink: 0 }} />
+                      {cfg.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {/* Full-width annotated text */}
+              <div className="card p-8 cursor-default" onClick={() => setPopupClaim(null)}>
+                <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">
                   {buildTextSegments(introText, result.claims).map((seg, i) => {
                     if (seg.type === "text") return <span key={i}>{seg.content}</span>;
                     const cfg = VERDICT_CONFIG[seg.claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
@@ -954,7 +968,7 @@ export default function Home() {
                     return (
                       <mark key={i} onClick={e => handleClaimClick(seg.claim, e)}
                         style={{ background: isActive ? cfg.badgeBg : `${cfg.badgeBg}99`, color: "inherit",
-                          borderBottom: `2px solid ${cfg.accent}`, borderRadius: "2px", padding: "0 1px",
+                          borderBottom: `2px solid ${cfg.accent}`, borderRadius: "2px", padding: "0 2px",
                           cursor: "pointer", transition: "background 0.15s" }}
                         title={cfg.label}>
                         {seg.content}
@@ -962,14 +976,6 @@ export default function Home() {
                     );
                   })}
                 </p>
-              </div>
-              <div className="flex flex-wrap gap-3 px-1">
-                {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
-                  <span key={verdict} className="flex items-center gap-1.5 text-[11px] text-[#9A9A98]">
-                    <span style={{ display: "inline-block", width: 10, height: 10, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 2 }} />
-                    {cfg.label}
-                  </span>
-                ))}
               </div>
             </div>
           )}
@@ -979,10 +985,10 @@ export default function Home() {
             <ClaimInlinePopup claim={popupClaim} style={popupStyle} onClose={() => setPopupClaim(null)} />
           )}
 
-          {/* Summary */}
-          <div className="card p-5 space-y-2 mt-6">
+          {/* Overall Assessment */}
+          <div className="card p-6 space-y-3 mt-8">
             <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98]">Overall Assessment</p>
-            <p className="text-sm leading-relaxed text-[#5A5A58]">{result.summary}</p>
+            <p className="text-[15px] leading-relaxed text-[#3A3A38]">{result.summary}</p>
           </div>
           {error && <div className="mt-4"><ErrorBanner error={error} /></div>}
         </main>

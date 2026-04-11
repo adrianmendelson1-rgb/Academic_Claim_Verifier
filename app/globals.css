@@ -138,11 +138,11 @@ button:disabled {
   border-color: #C8C8C6;
 }
 .input-card-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 18px 22px 6px;
+  padding: 20px 24px 6px;
   color: #C0C0BE;
   transition: color 0.18s ease;
   user-select: none;
@@ -153,16 +153,16 @@ button:disabled {
 }
 .input-card textarea {
   flex: 1;
-  padding: 4px 22px 20px;
+  padding: 4px 24px 24px;
   background: transparent;
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.75;
   color: #2A2A28;
   resize: none;
   border: none;
   outline: none;
   font-family: inherit;
-  min-height: 220px;
+  min-height: 260px;
 }
 .input-card textarea::placeholder {
   color: #C8C8C6;
