@@ -66,6 +66,7 @@ function ClaimNavCard({
   const [rewritten, setRewritten] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const showActions = ["NOT_SUPPORTED", "OVERSTATED", "PARTIAL", "WRONG_SOURCE"].includes(claim.verdict);
+  const showFindSource = claim.verdict === "UNVERIFIABLE";
   const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
 
   const handleRewrite = async (e: React.MouseEvent) => {
@@ -175,6 +176,21 @@ function ClaimNavCard({
               </a>
             </div>
           )}
+
+          {showFindSource && (
+            <a
+              href={scholarUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
+              onClick={e => e.stopPropagation()}
+            >
+              <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              Find supporting source
+            </a>
+          )}
         </div>
       )}
     </div>
@@ -182,14 +198,19 @@ function ClaimNavCard({
 }
 
 // ─── Missing paper row ─────────────────────────────────────────────────────────
-function MissingRow({ source, onUpload, uploadError, uploading }: {
+function MissingRow({ source, onUpload, uploadError, uploading, openMenuKey, setOpenMenuKey, onEdit, onDelete }: {
   source: MissingSource;
   onUpload: (file: File) => void;
   uploadError?: string;
   uploading?: boolean;
+  openMenuKey: string | null;
+  setOpenMenuKey: (k: string | null) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuKey = `missing-${source.citationKey}`;
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false);
@@ -207,6 +228,40 @@ function MissingRow({ source, onUpload, uploadError, uploading }: {
           <p className="text-[14px] font-medium text-[#1A1A18] truncate">{source.citationKey}</p>
           {source.title && <p className="text-[13px] text-[#9A9A98] truncate mt-0.5">{source.title}</p>}
           <p className="text-xs text-[#B45309] mt-1">{source.reason}</p>
+        </div>
+        {/* ⋯ menu for missing sources */}
+        <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => setOpenMenuKey(openMenuKey === menuKey ? null : menuKey)}
+            title="More options"
+            className="h-6 w-6 rounded-md flex items-center justify-center transition-all"
+            style={{ color: "#C0C0BE" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#EBEBEA"; e.currentTarget.style.color = "#5A5A58"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C0C0BE"; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <circle cx="8" cy="3" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="8" cy="13" r="1.4"/>
+            </svg>
+          </button>
+          {openMenuKey === menuKey && (
+            <div
+              className="absolute right-0 top-full mt-1.5 bg-white rounded-xl overflow-hidden"
+              style={{ border: "1px solid var(--border)", boxShadow: "0 4px 20px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06)", minWidth: "176px", zIndex: 30 }}
+            >
+              <button
+                onClick={() => { onEdit(); setOpenMenuKey(null); }}
+                className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
+                Edit source
+              </button>
+              <div className="h-px mx-3" style={{ background: "var(--border)" }} />
+              <button
+                onClick={() => { onDelete(); setOpenMenuKey(null); }}
+                className="w-full px-4 py-2.5 text-[13px] text-left hover:bg-[#FEF5F5] transition-colors"
+                style={{ color: "#B54040" }}>
+                Delete source
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div
@@ -657,6 +712,7 @@ export default function Home() {
     const update = (s: FoundSource) => s.citationKey === citationKey ? { ...s, title, year } : s;
     setUploadedSources(p => p.map(update));
     setFoundSources(p => p.map(update));
+    setMissingSources(p => p.map(m => m.citationKey === citationKey ? { ...m, title, year } : m));
     setEditingSource(null);
   }, [editingSource]);
 
@@ -904,12 +960,11 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 300px" }}>
+          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 320px" }}>
             {/* Sources list */}
             <div className="space-y-5 min-w-0">
               {resolvedSources > 0 && (
                 <div className="space-y-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98] px-1 mb-2">Retrieved</p>
                   {[...foundSources, ...uploadedSources].map(s => (
                     <div key={s.citationKey} className="card px-5 py-4 flex items-center gap-3.5">
                       <div className="h-7 w-7 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
@@ -953,13 +1008,6 @@ export default function Home() {
                                 className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
                                 Edit source
                               </button>
-                              {s.source === "uploaded" && (
-                                <button
-                                  onClick={() => { handleRemoveUploadFile(s.citationKey); setOpenMenuKey(null); }}
-                                  className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
-                                  Remove uploaded file
-                                </button>
-                              )}
                               <div className="h-px mx-3" style={{ background: "var(--border)" }} />
                               <button
                                 onClick={() => { handleDeleteSource(s.citationKey); setOpenMenuKey(null); }}
@@ -967,6 +1015,13 @@ export default function Home() {
                                 style={{ color: "#B54040" }}>
                                 Delete source
                               </button>
+                              {s.source === "uploaded" && (
+                                <button
+                                  onClick={() => { handleRemoveUploadFile(s.citationKey); setOpenMenuKey(null); }}
+                                  className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
+                                  Remove uploaded file
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1000,7 +1055,11 @@ export default function Home() {
                     <MissingRow key={m.citationKey} source={m}
                       onUpload={f => handleMissingUpload(f, m.citationKey)}
                       uploadError={uploadErrors[m.citationKey]}
-                      uploading={uploadingKeys.has(m.citationKey)} />
+                      uploading={uploadingKeys.has(m.citationKey)}
+                      openMenuKey={openMenuKey}
+                      setOpenMenuKey={setOpenMenuKey}
+                      onEdit={() => setEditingSource({ citationKey: m.citationKey, title: m.title ?? m.citationKey, year: m.year, accessLevel: "Not found" })}
+                      onDelete={() => handleDeleteSource(m.citationKey)} />
                   ))}
                 </div>
               )}
@@ -1012,7 +1071,7 @@ export default function Home() {
 
             {/* Right panel — summary + verify */}
             <div className="space-y-4">
-              <div className="card p-5 space-y-4">
+              <div className="card p-6 space-y-5">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
                 <div className="space-y-3">
                   {[
