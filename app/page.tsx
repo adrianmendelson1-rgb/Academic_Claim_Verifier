@@ -20,6 +20,7 @@ const VERDICT_CONFIG: Record<Verdict, {
   OVERSTATED:   { icon: "↑",  label: "Overstated",     accent: "#F97316", badgeBg: "#FFF7ED", badgeText: "#7C2D12", badgeBorder: "#FED7AA" },
   NOT_SUPPORTED:{ icon: "✕",  label: "Not Supported",  accent: "#EF4444", badgeBg: "#FEF2F2", badgeText: "#7F1D1D", badgeBorder: "#FECACA" },
   UNVERIFIABLE: { icon: "?",  label: "Unverifiable",   accent: "#9CA3AF", badgeBg: "#F9FAFB", badgeText: "#374151", badgeBorder: "#E5E7EB" },
+  WRONG_SOURCE: { icon: "⊘",  label: "Wrong Source",   accent: "#8B5CF6", badgeBg: "#F5F3FF", badgeText: "#4C1D95", badgeBorder: "#DDD6FE" },
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -56,7 +57,7 @@ function ClaimCard({ claim, index }: { claim: Claim; index: number }) {
   const [rewriting, setRewriting] = useState(false);
   const [rewritten, setRewritten] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL";
+  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL" || claim.verdict === "WRONG_SOURCE";
   const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
 
   const handleRewrite = async () => {
@@ -325,7 +326,7 @@ function ClaimInlinePopup({ claim, style, onClose }: {
   const [rewritten, setRewritten] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
-  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL";
+  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL" || claim.verdict === "WRONG_SOURCE";
 
   const handleRewrite = async () => {
     setRewriting(true); setRewritten(null);
