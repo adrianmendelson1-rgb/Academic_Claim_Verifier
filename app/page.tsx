@@ -249,7 +249,7 @@ function StepIndicator({ current }: { current: number }) {
         return (
           <div key={n} className="flex items-center gap-1.5">
             {i > 0 && <div className={`step-connector${isDone ? " step-connector-done" : ""}`} />}
-            <div className={`flex items-center gap-1.5 text-[11px] font-medium transition-colors ${
+            <div className={`flex items-center gap-1.5 text-[12px] font-semibold transition-colors ${
               isActive ? "text-[#1A1A18]" : isDone ? "text-[#10B981]" : "text-[#C8C8C6]"
             }`}>
               <div className={`step-dot ${isActive ? "step-dot-active" : isDone ? "step-dot-done" : "step-dot-pending"}`}>
@@ -462,6 +462,23 @@ export default function Home() {
   const [popupClaim, setPopupClaim] = useState<Claim | null>(null);
   const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const [driveLoading, setDriveLoading] = useState(false);
+
+  // ── Persist uploaded sources across sessions ────────────────────────────────
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("acv_uploaded_sources");
+      if (stored) {
+        const parsed: FoundSource[] = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) setUploadedSources(parsed);
+      }
+    } catch { /* ignore parse errors */ }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("acv_uploaded_sources", JSON.stringify(uploadedSources));
+    } catch { /* ignore quota errors */ }
+  }, [uploadedSources]);
 
   // ── handleFindSources ───────────────────────────────────────────────────────
   const handleFindSources = async () => {
@@ -737,20 +754,24 @@ export default function Home() {
 
       {/* ── Step 2: Sources ── */}
       {currentStep === 2 && (
-        <main className="flex-1 max-w-7xl mx-auto w-full px-10 py-12 step-enter">
+        <main className="flex-1 max-w-7xl mx-auto w-full px-10 pt-7 pb-10 step-enter">
           {/* Step header */}
-          <div className="flex items-start justify-between mb-10">
+          <div className="flex items-end justify-between mb-8">
             <div>
-              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-1.5">Sources</h1>
-              <p className="text-[15px] text-[#9A9A98]">
-                {resolvedSources} of {totalSources} retrieved
-                {totalSources > 0 && ` · ${Math.round((resolvedSources / totalSources) * 100)}% full text`}
+              <button
+                onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
+                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors mb-3">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back to Draft
+              </button>
+              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-2">Sources</h1>
+              <p className="text-[16px] font-medium text-[#5A5A58]">
+                <span className="text-[#1A1A18] font-semibold">{resolvedSources}</span> of <span className="font-semibold text-[#1A1A18]">{totalSources}</span> retrieved
+                {totalSources > 0 && <span className="text-[#9A9A98] font-normal"> · {Math.round((resolvedSources / totalSources) * 100)}% full text</span>}
               </p>
             </div>
-            <button onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
-              className="text-sm text-[#9A9A98] hover:text-[#5A5A58] transition-colors mt-2">
-              ← Back to Draft
-            </button>
           </div>
 
           <div className="grid gap-10" style={{ gridTemplateColumns: "1fr 380px" }}>
@@ -854,43 +875,46 @@ export default function Home() {
 
       {/* ── Step 3: Results ── */}
       {currentStep === 3 && result && (
-        <main className="flex-1 max-w-7xl mx-auto w-full px-10 py-12 step-enter">
+        <main className="flex-1 max-w-7xl mx-auto w-full px-10 pt-7 pb-10 step-enter">
           {/* Header */}
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
+          <div className="flex items-end justify-between pb-6 mb-8 border-b" style={{ borderColor: "var(--border)" }}>
+            <div>
               <button
                 onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null); }}
-                className="text-sm text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
-                ← Start over
+                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors mb-3">
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Start over
               </button>
+              <h1 className="text-[34px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {/* View mode toggle */}
-              <div className="flex rounded-lg border overflow-hidden" style={{ borderColor: "var(--border)" }}>
+              <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
                 {(["cards", "annotated"] as const).map(mode => (
                   <button key={mode} onClick={() => { setViewMode(mode); setPopupClaim(null); }}
-                    className="px-3 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
+                    className="px-4 py-2 text-sm font-medium transition-all flex items-center gap-2"
                     style={{
                       background: viewMode === mode ? "var(--text-primary)" : "var(--surface)",
                       color: viewMode === mode ? "white" : "var(--text-secondary)",
                       borderRight: mode === "cards" ? `1px solid var(--border)` : undefined,
                     }}>
                     {mode === "cards"
-                      ? <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Cards</>
-                      : <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>Annotated</>
+                      ? <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Cards</>
+                      : <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>Annotated</>
                     }
                   </button>
                 ))}
               </div>
               {(["docx","pdf"] as const).map(fmt => (
                 <button key={fmt} onClick={() => handleExport(fmt)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all"
+                  className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-all"
                   style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
                   onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
                   onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
                 >
-                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
                   </svg>
                   {fmt === "docx" ? "Word" : "PDF"}
@@ -958,8 +982,8 @@ export default function Home() {
                   ))}
                 </div>
               </div>
-              {/* Full-width annotated text */}
-              <div className="card p-8 cursor-default" onClick={() => setPopupClaim(null)}>
+              {/* Constrained-width annotated text — ~75ch for comfortable reading */}
+              <div className="card p-8 cursor-default max-w-[860px]" onClick={() => setPopupClaim(null)}>
                 <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">
                   {buildTextSegments(introText, result.claims).map((seg, i) => {
                     if (seg.type === "text") return <span key={i}>{seg.content}</span>;
