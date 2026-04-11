@@ -14,28 +14,30 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
-    // List all objects under this session's folder
+    // List immediate children of papers/ (subfolders have id === null)
     const { data, error } = await supabase.storage
       .from(BUCKET)
-      .list(sessionId, { limit: 200 });
+      .list("papers", { limit: 1000 });
 
     if (error) throw new Error(error.message);
     if (!data || data.length === 0) return NextResponse.json([]);
 
-    // Read only the .meta.json files (the PDFs themselves are large)
-    const metaFiles = data.filter((f) => f.name.endsWith(".meta.json"));
+    // Only folders (id === null are virtual folders in Supabase Storage)
+    const folders = data.filter((item) => item.id === null);
 
     const results: StoredFileMeta[] = [];
-    for (const file of metaFiles) {
-      const path = `${sessionId}/${file.name}`;
+    for (const folder of folders) {
+      const metaPath = `papers/${folder.name}/meta.json`;
       const { data: raw, error: dlErr } = await supabase.storage
         .from(BUCKET)
-        .download(path);
+        .download(metaPath);
       if (dlErr || !raw) continue;
       try {
-        const text = await raw.text();
-        const parsed: StoredFileMeta = JSON.parse(text);
-        results.push(parsed);
+        const parsed: StoredFileMeta = JSON.parse(await raw.text());
+        // Only return files belonging to this session
+        if (parsed.sessionId === sessionId) {
+          results.push(parsed);
+        }
       } catch {
         // skip corrupted meta
       }

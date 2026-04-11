@@ -3,7 +3,7 @@ import { getSupabaseAdmin, BUCKET } from "@/lib/supabase";
 
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
-// Sanitise a citation key into a safe filename segment
+// Sanitise a citation key into a safe folder/filename segment
 function safeKey(citationKey: string): string {
   return citationKey.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
 }
@@ -13,8 +13,9 @@ export interface StoredFileMeta {
   title: string;
   year?: number;
   text: string;           // extracted text (up to ~2 000 words)
-  pdfPath: string;        // uploads/{sessionId}/{safeKey}.pdf
-  metaPath: string;       // uploads/{sessionId}/{safeKey}.meta.json
+  pdfPath: string;        // papers/{safeKey}/paper.pdf
+  metaPath: string;       // papers/{safeKey}/meta.json
+  sessionId: string;      // used to filter files per user session
   uploadedAt: string;     // ISO timestamp
   fileSizeBytes: number;
 }
@@ -51,8 +52,8 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
     const sk = safeKey(citationKey);
-    const pdfPath = `${sessionId}/${sk}.pdf`;
-    const metaPath = `${sessionId}/${sk}.meta.json`;
+    const pdfPath = `papers/${sk}/paper.pdf`;
+    const metaPath = `papers/${sk}/meta.json`;
 
     // Upload PDF (upsert so duplicate filenames just overwrite)
     const { error: pdfErr } = await supabase.storage
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
       text: text ?? "",
       pdfPath,
       metaPath,
+      sessionId,
       uploadedAt: new Date().toISOString(),
       fileSizeBytes: pdfBuffer.length,
     };

@@ -15,8 +15,8 @@ export async function DELETE(req: NextRequest) {
     const supabase = getSupabaseAdmin();
 
     const paths = [
-      `${sessionId}/${safeKey}.pdf`,
-      `${sessionId}/${safeKey}.meta.json`,
+      `papers/${safeKey}/paper.pdf`,
+      `papers/${safeKey}/meta.json`,
     ];
 
     const { error } = await supabase.storage.from(BUCKET).remove(paths);
