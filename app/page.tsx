@@ -43,7 +43,7 @@ function Spinner({ size = 16, color = "currentColor" }: { size?: number; color?:
 
 function Badge({ config }: { config: typeof VERDICT_CONFIG[Verdict] }) {
   return (
-    <span style={{ background: config.badgeBg, color: config.badgeText, borderColor: config.badgeBorder }}
+    <span style={{ background: config.badgeBg, color: config.badgeText, borderColor: `${config.accent}55` }}
       className="inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide flex-shrink-0">
       <span className="font-bold">{config.icon}</span>
       {config.label}
@@ -92,8 +92,8 @@ function ClaimNavCard({
       className="border-b cursor-pointer transition-all"
       style={{
         borderColor: "var(--border)",
-        background: isSelected ? cfg.badgeBg : isHovered ? "#FAFAF9" : "transparent",
-        borderLeft: `3px solid ${isSelected ? cfg.accent : "transparent"}`,
+        background: isSelected ? cfg.badgeBg : isHovered ? `${cfg.badgeBg}55` : "transparent",
+        borderLeft: `3px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}44` : "transparent"}`,
       }}
     >
       {/* Compact summary — always visible */}
@@ -115,37 +115,37 @@ function ClaimNavCard({
           style={{ borderColor: `${cfg.accent}33` }}
           onClick={e => e.stopPropagation()}
         >
-          <p className="text-[12px] text-[#4A4A48] leading-relaxed">{claim.why}</p>
+          <p className="text-[13px] text-[#3A3A38] leading-relaxed">{claim.why}</p>
 
           {claim.citation && claim.citation !== "No citation" && (
             <div className="rounded-lg border px-3 py-2 bg-[#FAFAF9]" style={{ borderColor: "var(--border)" }}>
               <p className="text-[9px] font-semibold text-[#9A9A98] uppercase tracking-wider mb-0.5">Source accessed</p>
-              <p className="text-[11px] font-medium text-[#1A1A18]">
+              <p className="text-[12px] font-medium text-[#1A1A18]">
                 {SOURCE_LABELS[claim.source_accessed ?? ""] ?? claim.source_accessed ?? "Unknown"}
               </p>
             </div>
           )}
 
           {claim.fix && claim.fix !== "none needed" && !rewritten && (
-            <div className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2">
+            <div className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2.5">
               <p className="text-[9px] font-semibold text-[#1D4ED8] uppercase tracking-wider mb-1">Suggested fix</p>
-              <p className="text-[11px] text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
+              <p className="text-[12px] text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
             </div>
           )}
 
           {rewritten && (
-            <div className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2 space-y-1.5">
+            <div className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2.5 space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className="text-[9px] font-semibold text-[#065F46] uppercase tracking-wider">Rewritten</p>
                 <button
                   onClick={() => { navigator.clipboard.writeText(rewritten); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                  className="text-[9px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
+                  className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
                 >
                   {copied ? "Copied!" : "Copy"}
                 </button>
               </div>
-              <p className="text-[11px] text-[#14532D] leading-relaxed">{rewritten}</p>
-              <button onClick={() => setRewritten(null)} className="text-[9px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+              <p className="text-[12px] text-[#14532D] leading-relaxed">{rewritten}</p>
+              <button onClick={() => setRewritten(null)} className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
                 Dismiss
               </button>
             </div>
@@ -156,7 +156,7 @@ function ClaimNavCard({
               <button
                 onClick={handleRewrite}
                 disabled={rewriting}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-1.5 text-[10px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
               >
                 {rewriting ? <><Spinner size={10} /> Rewriting…</> : <>✏ Rewrite</>}
               </button>
@@ -164,7 +164,7 @@ function ClaimNavCard({
                 href={scholarUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-1.5 text-[10px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
+                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
                 onClick={e => e.stopPropagation()}
               >
                 <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -816,14 +816,7 @@ export default function Home() {
       <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
         style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
         <div className="max-w-7xl mx-auto px-10 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-[#1A1A18] flex items-center justify-center flex-shrink-0">
-              <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-              </svg>
-            </div>
-            <span className="text-sm font-semibold text-[#1A1A18]">Claim Verifier</span>
-          </div>
+          <span className="text-[15px] font-semibold text-[#1A1A18] tracking-tight">Claim Verifier</span>
           <StepIndicator current={currentStep} />
           <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
@@ -904,7 +897,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 360px" }}>
+          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 300px" }}>
             {/* Sources list */}
             <div className="space-y-5 min-w-0">
               {resolvedSources > 0 && (
@@ -924,41 +917,52 @@ export default function Home() {
                           style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
                           {SOURCE_LABELS[s.source ?? ""] ?? s.source}
                         </span>
-                        {s.source === "uploaded" && (
-                          <>
-                            {/* X: remove upload file only, returns to needs-upload */}
-                            <button
-                              onClick={() => handleRemoveUploadFile(s.citationKey)}
-                              title="Remove uploaded file"
-                              className="h-6 w-6 rounded-full flex items-center justify-center text-[#C8C8C6] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-all text-sm leading-none">
-                              ×
-                            </button>
-                            {/* Three-dot menu */}
-                            <div className="relative" onClick={e => e.stopPropagation()}>
+                        {/* Single ⋯ menu for all sources */}
+                        <div className="relative" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={() => setOpenMenuKey(openMenuKey === s.citationKey ? null : s.citationKey)}
+                            title="More options"
+                            className="h-6 w-6 rounded-md flex items-center justify-center transition-all"
+                            style={{ color: "#C0C0BE" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "#EBEBEA"; e.currentTarget.style.color = "#5A5A58"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#C0C0BE"; }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                              <circle cx="8" cy="3" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="8" cy="13" r="1.4"/>
+                            </svg>
+                          </button>
+                          {openMenuKey === s.citationKey && (
+                            <div
+                              className="absolute right-0 top-full mt-1.5 bg-white rounded-xl overflow-hidden"
+                              style={{
+                                border: "1px solid var(--border)",
+                                boxShadow: "0 4px 20px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.06)",
+                                minWidth: "176px",
+                                zIndex: 30,
+                              }}
+                            >
                               <button
-                                onClick={() => setOpenMenuKey(openMenuKey === s.citationKey ? null : s.citationKey)}
-                                title="More options"
-                                className="h-6 w-6 rounded flex items-center justify-center text-[#C8C8C6] hover:text-[#5A5A58] hover:bg-[#F0F0EE] transition-all text-xs font-bold tracking-tighter">
-                                •••
+                                onClick={() => { setEditingSource(s); setOpenMenuKey(null); }}
+                                className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
+                                Edit source
                               </button>
-                              {openMenuKey === s.citationKey && (
-                                <div className="absolute right-0 top-full mt-1 bg-white border rounded-xl shadow-xl z-20 w-40 py-1 overflow-hidden"
-                                  style={{ borderColor: "var(--border)" }}>
-                                  <button
-                                    onClick={() => { setEditingSource(s); setOpenMenuKey(null); }}
-                                    className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
-                                    Edit source
-                                  </button>
-                                  <button
-                                    onClick={() => { handleDeleteSource(s.citationKey); setOpenMenuKey(null); }}
-                                    className="w-full px-4 py-2.5 text-[13px] text-left text-red-600 hover:bg-red-50 transition-colors">
-                                    Delete source
-                                  </button>
-                                </div>
+                              {s.source === "uploaded" && (
+                                <button
+                                  onClick={() => { handleRemoveUploadFile(s.citationKey); setOpenMenuKey(null); }}
+                                  className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
+                                  Remove uploaded file
+                                </button>
                               )}
+                              <div className="h-px mx-3" style={{ background: "var(--border)" }} />
+                              <button
+                                onClick={() => { handleDeleteSource(s.citationKey); setOpenMenuKey(null); }}
+                                className="w-full px-4 py-2.5 text-[13px] text-left hover:bg-[#FEF5F5] transition-colors"
+                                style={{ color: "#B54040" }}>
+                                Delete source
+                              </button>
                             </div>
-                          </>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1114,12 +1118,15 @@ export default function Home() {
             >
               {/* Filter pills */}
               {stats && (() => {
-                const filterItems: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
-                  { key: "ALL",          label: "All",          value: stats.total,        color: "#1A1A18",  activeBg: "#F0F0EE", activeBorder: "#C8C8C6" },
-                  { key: "SUPPORTED",    label: "Supported",    value: stats.supported,    color: "#10B981",  activeBg: "#F0FDF4", activeBorder: "#10B981" },
-                  { key: "ISSUES",       label: "Issues",       value: stats.issues,       color: "#F59E0B",  activeBg: "#FFFBEB", activeBorder: "#F59E0B" },
-                  { key: "NOT_SUPPORTED",label: "Not supported",value: stats.notSupported, color: "#EF4444",  activeBg: "#FEF2F2", activeBorder: "#EF4444" },
-                  { key: "UNVERIFIABLE", label: "Unverifiable", value: stats.unverifiable, color: "#9CA3AF",  activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
+                // Three-tier color system: same hues, different intensity
+                // LOW  = inactive (muted tint of the verdict color)
+                // STRONG = active (richer tint, saturated border, full text color)
+                const filterItems = [
+                  { key: "ALL" as const,           label: "All",          value: stats.total,        accent: "#6B7280", badgeBg: "#F3F4F6", badgeText: "#374151" },
+                  { key: "SUPPORTED" as const,     label: "Supported",    value: stats.supported,    accent: VERDICT_CONFIG.SUPPORTED.accent,     badgeBg: VERDICT_CONFIG.SUPPORTED.badgeBg,     badgeText: VERDICT_CONFIG.SUPPORTED.badgeText },
+                  { key: "ISSUES" as const,        label: "Issues",       value: stats.issues,       accent: VERDICT_CONFIG.PARTIAL.accent,       badgeBg: VERDICT_CONFIG.PARTIAL.badgeBg,       badgeText: VERDICT_CONFIG.PARTIAL.badgeText },
+                  { key: "NOT_SUPPORTED" as const, label: "Not supported",value: stats.notSupported, accent: VERDICT_CONFIG.NOT_SUPPORTED.accent, badgeBg: VERDICT_CONFIG.NOT_SUPPORTED.badgeBg, badgeText: VERDICT_CONFIG.NOT_SUPPORTED.badgeText },
+                  { key: "UNVERIFIABLE" as const,  label: "Unverifiable", value: stats.unverifiable, accent: VERDICT_CONFIG.UNVERIFIABLE.accent,  badgeBg: VERDICT_CONFIG.UNVERIFIABLE.badgeBg,  badgeText: VERDICT_CONFIG.UNVERIFIABLE.badgeText },
                 ];
                 return (
                   <div className="px-4 py-3 border-b flex flex-wrap gap-1.5 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
@@ -1129,9 +1136,13 @@ export default function Home() {
                         <button key={f.key} onClick={() => setActiveTab(f.key)}
                           className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
                           style={{
-                            background: active ? f.activeBg : "transparent",
-                            color: active ? f.color : "var(--text-tertiary)",
-                            border: `1px solid ${active ? f.activeBorder : "var(--border)"}`,
+                            // STRONG (active): full badge color — clearly selected, still refined
+                            // LOW (inactive): very subtle tint of same hue
+                            background: active ? f.badgeBg : `${f.badgeBg}70`,
+                            color: active ? f.badgeText : `${f.accent}88`,
+                            border: active
+                              ? `1.5px solid ${f.accent}77`
+                              : `1px solid ${f.accent}28`,
                           }}>
                           <span className="tabular-nums font-bold">{f.value}</span>
                           {f.label}
@@ -1181,18 +1192,8 @@ export default function Home() {
               className="flex-1 overflow-y-auto"
               style={{ padding: "28px 40px 40px" }}
             >
-              {/* Legend */}
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-6">
-                <p className="text-xs text-[#9A9A98]">Click a highlighted phrase for details.</p>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                  {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
-                    <span key={verdict} className="flex items-center gap-1.5 text-[11px] text-[#6A6A68] font-medium">
-                      <span style={{ display: "inline-block", width: 10, height: 10, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 3, flexShrink: 0 }} />
-                      {cfg.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              {/* Minimal interaction hint — no legend needed, colors are self-explanatory */}
+              <p className="text-[12px] text-[#C0C0BE] mb-5">Click any highlighted phrase to view details.</p>
 
               {/* Annotated text */}
               <div className="card p-8 cursor-default">
