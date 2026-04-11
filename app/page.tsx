@@ -823,8 +823,8 @@ export default function Home() {
       {/* ── Header ── */}
       <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
         style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
-        <div className="max-w-7xl mx-auto pl-6 pr-10 h-14 flex items-center justify-between">
-          <span className="text-[16px] font-semibold text-[#1A1A18] tracking-tight">Claim Verifier</span>
+        <div className="max-w-7xl mx-auto pl-3 pr-10 h-14 flex items-center justify-between">
+          <span className="text-[18px] font-semibold text-[#1A1A18] tracking-tight">Claim Verifier</span>
           <StepIndicator current={currentStep} />
           <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
