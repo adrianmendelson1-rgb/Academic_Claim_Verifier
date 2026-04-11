@@ -93,9 +93,9 @@ function ClaimNavCard({
       className="border-b cursor-pointer transition-all"
       style={{
         borderColor: "var(--border)",
-        background: isSelected ? cfg.badgeBg : isHovered ? `${cfg.badgeBg}55` : "transparent",
-        borderLeft: `${isSelected ? 4 : 3}px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}44` : "transparent"}`,
-        boxShadow: isSelected ? `inset 4px 0 14px ${cfg.accent}12` : undefined,
+        background: isSelected ? cfg.badgeBg : isHovered ? `${cfg.badgeBg}70` : `${cfg.badgeBg}28`,
+        borderLeft: `${isSelected ? 4 : isHovered ? 3 : 2}px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}66` : `${cfg.accent}28`}`,
+        boxShadow: isSelected ? `inset 4px 0 18px ${cfg.accent}22, 0 2px 10px rgba(0,0,0,0.07)` : undefined,
       }}
     >
       {/* Compact summary — always visible */}
@@ -219,13 +219,13 @@ function MissingRow({ source, onUpload, uploadError, uploading, openMenuKey, set
   };
 
   return (
-    <div className="card px-5 py-4 space-y-3">
-      <div className="flex items-start gap-3.5">
-        <span className="mt-0.5 text-[15px] flex-shrink-0" style={{ color: source.kind === "abstract_only" ? "#F59E0B" : "#EF4444" }}>
+    <div className="card px-6 py-5 space-y-3">
+      <div className="flex items-start gap-4">
+        <span className="mt-0.5 text-[16px] flex-shrink-0" style={{ color: source.kind === "abstract_only" ? "#F59E0B" : "#EF4444" }}>
           {source.kind === "abstract_only" ? "≈" : "✕"}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-medium text-[#1A1A18] truncate">{source.citationKey}</p>
+          <p className="text-[15px] font-medium text-[#1A1A18] truncate">{source.citationKey}</p>
           {source.title && <p className="text-[13px] text-[#9A9A98] truncate mt-0.5">{source.title}</p>}
           <p className="text-xs text-[#B45309] mt-1">{source.reason}</p>
         </div>
@@ -951,11 +951,10 @@ export default function Home() {
                 </svg>
                 Back to Draft
               </button>
-              <h1 className="text-[28px] font-semibold tracking-tight text-[#1A1A18] mb-1">Sources</h1>
-              <p className="text-[15px] font-medium text-[#5A5A58]">
-                <span className="text-[#1A1A18] font-semibold">{resolvedSources}</span> of{" "}
-                <span className="font-semibold text-[#1A1A18]">{totalSources}</span> retrieved
-                {totalSources > 0 && <span className="text-[#9A9A98] font-normal"> · {Math.round((resolvedSources / totalSources) * 100)}% full text</span>}
+              <h1 className="text-[32px] font-bold tracking-tight text-[#1A1A18] mb-1.5">Sources</h1>
+              <p className="text-[12px] text-[#9A9A98]">
+                {resolvedSources} of {totalSources} retrieved
+                {totalSources > 0 && <span> · {Math.round((resolvedSources / totalSources) * 100)}% full text</span>}
               </p>
             </div>
           </div>
@@ -966,12 +965,12 @@ export default function Home() {
               {resolvedSources > 0 && (
                 <div className="space-y-2">
                   {[...foundSources, ...uploadedSources].map(s => (
-                    <div key={s.citationKey} className="card px-5 py-4 flex items-center gap-3.5">
-                      <div className="h-7 w-7 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
-                        <span className="text-[#10B981] font-bold text-[11px]">✓</span>
+                    <div key={s.citationKey} className="card px-6 py-5 flex items-center gap-4">
+                      <div className="h-8 w-8 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
+                        <span className="text-[#10B981] font-bold text-[12px]">✓</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[14px] font-semibold text-[#1A1A18]">{s.citationKey}</p>
+                        <p className="text-[15px] font-semibold text-[#1A1A18]">{s.citationKey}</p>
                         <p className="text-[13px] text-[#9A9A98] leading-snug truncate mt-0.5">{s.title}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -1179,8 +1178,8 @@ export default function Home() {
             {/* ── Left panel: Claims navigation ── */}
             <div
               ref={leftPanelRef}
-              className="flex-shrink-0 overflow-y-auto border-r flex flex-col"
-              style={{ width: "28%", borderColor: "var(--border)" }}
+              className="flex-shrink-0 overflow-y-auto border-r flex flex-col panel-scroll panel-scroll-left"
+              style={{ width: "28%", borderColor: "var(--border-strong)" }}
             >
               {/* Filter pills */}
               {stats && (() => {
@@ -1204,11 +1203,11 @@ export default function Home() {
                           style={{
                             // STRONG (active): full badge color — clearly selected, still refined
                             // LOW (inactive): very subtle tint of same hue
-                            background: active ? f.badgeBg : `${f.badgeBg}70`,
-                            color: active ? f.badgeText : `${f.accent}88`,
+                            background: active ? f.badgeBg : `${f.badgeBg}60`,
+                            color: active ? f.badgeText : `${f.accent}70`,
                             border: active
-                              ? `1.5px solid ${f.accent}77`
-                              : `1px solid ${f.accent}28`,
+                              ? `1.5px solid ${f.accent}AA`
+                              : `1px solid ${f.accent}22`,
                           }}>
                           <span className="tabular-nums font-bold">{f.value}</span>
                           {f.label}
@@ -1255,7 +1254,7 @@ export default function Home() {
             {/* ── Right panel: Annotated text ── */}
             <div
               ref={rightPanelRef}
-              className="flex-1 overflow-y-auto"
+              className="flex-1 overflow-y-auto panel-scroll"
               style={{ padding: "28px 40px 40px" }}
             >
               {/* Annotated text */}
@@ -1278,15 +1277,15 @@ export default function Home() {
                           background: isSelected
                             ? cfg.badgeBg
                             : isHovered
-                              ? `${cfg.badgeBg}DD`
-                              : `${cfg.badgeBg}88`,
+                              ? `${cfg.badgeBg}F0`
+                              : `${cfg.badgeBg}BB`,
                           color: "inherit",
-                          borderBottom: `2px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}CC` : `${cfg.accent}77`}`,
+                          borderBottom: `${isSelected ? 3 : 2}px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}DD` : `${cfg.accent}AA`}`,
                           borderRadius: "2px",
                           padding: "1px 2px",
                           cursor: "pointer",
                           transition: "background 0.15s, border-color 0.15s",
-                          outline: isSelected ? `2px solid ${cfg.accent}33` : undefined,
+                          outline: isSelected ? `2px solid ${cfg.accent}44` : undefined,
                           outlineOffset: "1px",
                         }}
                         title={cfg.label}
