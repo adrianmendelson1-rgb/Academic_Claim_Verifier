@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useTransition } from "react";
+import type { StoredFileMeta } from "@/app/api/storage/upload/route";
 import type {
   Claim, VerificationResult, Verdict,
   FoundSource, MissingSource, FindSourcesResult,
@@ -268,7 +269,7 @@ function StepIndicator({ current }: { current: number }) {
 function ErrorBanner({ error }: { error: string }) {
   let msg = error;
   try {
-    const m = error.match(/\{.*\}/s);
+    const m = error.match(/\{[\s\S]*\}/);
     if (m) {
       const p = JSON.parse(m[0]);
       if (p?.error?.type === "overloaded_error") msg = "Claude is currently overloaded — please wait a moment and try again.";
@@ -462,18 +463,41 @@ export default function Home() {
   const [popupClaim, setPopupClaim] = useState<Claim | null>(null);
   const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
   const [driveLoading, setDriveLoading] = useState(false);
+  const [sessionId, setSessionId] = useState("");
+  const [supabaseFiles, setSupabaseFiles] = useState<StoredFileMeta[]>([]);
+  const [, startTransition] = useTransition();
 
-  // ── Persist uploaded sources across sessions ────────────────────────────────
+  // ── Session ID + Supabase restore on first load ─────────────────────────────
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem("acv_uploaded_sources");
-      if (stored) {
-        const parsed: FoundSource[] = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) setUploadedSources(parsed);
-      }
-    } catch { /* ignore parse errors */ }
+    // Stable session ID persisted in localStorage
+    let sid = localStorage.getItem("acv_session_id");
+    if (!sid) {
+      sid = crypto.randomUUID();
+      localStorage.setItem("acv_session_id", sid);
+    }
+    setSessionId(sid);
+
+    // Fetch any previously uploaded files for this session from Supabase
+    fetch(`/api/storage/files?sessionId=${sid}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((files: StoredFileMeta[]) => {
+        if (Array.isArray(files) && files.length > 0) {
+          setSupabaseFiles(files);
+          // Also restore them into uploadedSources so they appear immediately
+          setUploadedSources(files.map(f => ({
+            citationKey: f.citationKey,
+            title: f.title,
+            year: typeof f.year === "number" ? f.year : undefined,
+            accessLevel: "Full text",
+            text: f.text,
+            source: "uploaded" as const,
+          })));
+        }
+      })
+      .catch(() => { /* Supabase not configured yet — silent */ });
   }, []);
 
+  // ── localStorage fallback (works even without Supabase configured) ───────────
   useEffect(() => {
     try {
       localStorage.setItem("acv_uploaded_sources", JSON.stringify(uploadedSources));
@@ -497,8 +521,32 @@ export default function Home() {
       });
       const data: FindSourcesResult & { error?: string } = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to find sources");
-      setFoundSources(data.found ?? []);
-      setMissingSources(data.missing ?? []);
+      const found: FoundSource[] = data.found ?? [];
+      const missing: MissingSource[] = data.missing ?? [];
+
+      // Auto-match any previously uploaded Supabase files against new missing sources
+      const autoMatched: FoundSource[] = [];
+      const stillMissing: MissingSource[] = [];
+      for (const m of missing) {
+        const stored = supabaseFiles.find(f => f.citationKey === m.citationKey);
+        if (stored && stored.text) {
+          autoMatched.push({
+            citationKey: m.citationKey, title: stored.title,
+            year: typeof stored.year === "number" ? stored.year : undefined,
+            accessLevel: "Full text",
+            text: stored.text, source: "uploaded" as const,
+          });
+        } else {
+          stillMissing.push(m);
+        }
+      }
+
+      setFoundSources(found);
+      setMissingSources(stillMissing);
+      if (autoMatched.length > 0) setUploadedSources(p => [
+        ...p.filter(u => !autoMatched.some(a => a.citationKey === u.citationKey)),
+        ...autoMatched,
+      ]);
       setFindPhase("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
@@ -527,15 +575,36 @@ export default function Home() {
       if (!res.ok) { setUploadErrors(p => ({...p, [citationKey]: data.error || "Extraction failed"})); return; }
 
       const original = missingSources.find(m => m.citationKey === citationKey);
-      setUploadedSources(p => [...p.filter(s => s.citationKey !== citationKey), {
+      const newSource: FoundSource = {
         citationKey, title: original?.title ?? file.name.replace(/\.pdf$/i, ""),
         year: original?.year, accessLevel: "Full text", text: data.text, source: "uploaded",
-      }]);
+      };
+      setUploadedSources(p => [...p.filter(s => s.citationKey !== citationKey), newSource]);
       setMissingSources(p => p.filter(m => m.citationKey !== citationKey));
+
+      // Persist to Supabase async (fire-and-forget — never blocks the UI)
+      if (sessionId) {
+        startTransition(() => {
+          fetch("/api/storage/upload", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              base64, citationKey, title: newSource.title,
+              year: newSource.year, text: data.text, sessionId,
+            }),
+          })
+            .then(r => r.json())
+            .then((meta: StoredFileMeta) => {
+              if (meta.citationKey) {
+                setSupabaseFiles(p => [...p.filter(f => f.citationKey !== citationKey), meta]);
+              }
+            })
+            .catch(() => { /* silent — localStorage is the fallback */ });
+        });
+      }
     } finally {
       setUploadingKeys(p => { const n = new Set(p); n.delete(citationKey); return n; });
     }
-  }, [missingSources]);
+  }, [missingSources, sessionId]);
 
   // ── handleVerify ────────────────────────────────────────────────────────────
   const handleClaimClick = useCallback((claim: Claim, e: React.MouseEvent) => {
@@ -599,6 +668,28 @@ export default function Home() {
       URL.revokeObjectURL(url);
     } catch (e) { setError(e instanceof Error ? e.message : "Export failed"); }
   };
+
+  // ── Delete uploaded source ──────────────────────────────────────────────────
+  const handleDeleteUpload = useCallback(async (citationKey: string) => {
+    // Remove from local state immediately (optimistic)
+    setUploadedSources(p => p.filter(s => s.citationKey !== citationKey));
+    setSupabaseFiles(p => p.filter(f => f.citationKey !== citationKey));
+
+    // Delete from Supabase async
+    if (sessionId) {
+      fetch("/api/storage/delete", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, citationKey }),
+      }).catch(() => {});
+    }
+
+    // Update localStorage
+    try {
+      const stored = JSON.parse(localStorage.getItem("acv_uploaded_sources") ?? "[]") as FoundSource[];
+      localStorage.setItem("acv_uploaded_sources",
+        JSON.stringify(stored.filter((s: FoundSource) => s.citationKey !== citationKey)));
+    } catch {}
+  }, [sessionId]);
 
   // ── Google Drive ────────────────────────────────────────────────────────────
   const handleGoogleDrive = useCallback(async () => {
@@ -789,10 +880,20 @@ export default function Home() {
                         <p className="text-sm font-semibold text-[#1A1A18] mb-0.5">{s.citationKey}</p>
                         <p className="text-[13px] text-[#9A9A98] leading-snug">{s.title}</p>
                       </div>
-                      <span className="text-[11px] font-medium rounded-full px-3 py-1 flex-shrink-0 mt-0.5"
-                        style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
-                        {SOURCE_LABELS[s.source ?? ""] ?? s.source}
-                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                        <span className="text-[11px] font-medium rounded-full px-3 py-1"
+                          style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
+                          {SOURCE_LABELS[s.source ?? ""] ?? s.source}
+                        </span>
+                        {s.source === "uploaded" && (
+                          <button
+                            onClick={() => handleDeleteUpload(s.citationKey)}
+                            title="Remove this upload"
+                            className="h-5 w-5 rounded-full flex items-center justify-center text-[#C8C8C6] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-all text-xs">
+                            ×
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
