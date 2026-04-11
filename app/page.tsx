@@ -10,10 +10,10 @@ import type {
 // ─── Design tokens ─────────────────────────────────────────────────────────────
 const VERDICT_CONFIG: Record<Verdict, {
   icon: string; label: string;
-  accent: string;        // left-border color
-  badgeBg: string;       // badge background
-  badgeText: string;     // badge text color
-  badgeBorder: string;   // badge border
+  accent: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
 }> = {
   SUPPORTED:    { icon: "✓",  label: "Supported",     accent: "#10B981", badgeBg: "#F0FDF4", badgeText: "#065F46", badgeBorder: "#BBF7D0" },
   PARTIAL:      { icon: "≈",  label: "Partial",        accent: "#F59E0B", badgeBg: "#FFFBEB", badgeText: "#78350F", badgeBorder: "#FDE68A" },
@@ -44,25 +44,33 @@ function Spinner({ size = 16, color = "currentColor" }: { size?: number; color?:
 function Badge({ config }: { config: typeof VERDICT_CONFIG[Verdict] }) {
   return (
     <span style={{ background: config.badgeBg, color: config.badgeText, borderColor: config.badgeBorder }}
-      className="inline-flex items-center gap-1.5 border rounded-full px-3 py-1 text-xs font-semibold tracking-wide">
+      className="inline-flex items-center gap-1.5 border rounded-full px-2.5 py-0.5 text-[10px] font-semibold tracking-wide flex-shrink-0">
       <span className="font-bold">{config.icon}</span>
       {config.label}
     </span>
   );
 }
 
-// ─── Claim Card ────────────────────────────────────────────────────────────────
-function ClaimCard({ claim, index }: { claim: Claim; index: number }) {
+// ─── Claim Nav Card (left panel) ──────────────────────────────────────────────
+function ClaimNavCard({
+  claim, index, isSelected, isHovered,
+  onSelect, onHover, onHoverEnd, cardRef,
+}: {
+  claim: Claim; index: number;
+  isSelected: boolean; isHovered: boolean;
+  onSelect: () => void; onHover: () => void; onHoverEnd: () => void;
+  cardRef: (el: HTMLDivElement | null) => void;
+}) {
   const cfg = VERDICT_CONFIG[claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
   const [rewriting, setRewriting] = useState(false);
   const [rewritten, setRewritten] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL" || claim.verdict === "WRONG_SOURCE";
+  const showActions = ["NOT_SUPPORTED", "OVERSTATED", "PARTIAL", "WRONG_SOURCE"].includes(claim.verdict);
   const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
 
-  const handleRewrite = async () => {
-    setRewriting(true);
-    setRewritten(null);
+  const handleRewrite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRewriting(true); setRewritten(null);
     try {
       const res = await fetch("/api/rewrite-claim", {
         method: "POST",
@@ -71,103 +79,103 @@ function ClaimCard({ claim, index }: { claim: Claim; index: number }) {
       });
       const data = await res.json();
       setRewritten(data.rewritten || "Could not generate a rewrite.");
-    } catch {
-      setRewritten("Error generating rewrite.");
-    } finally {
-      setRewriting(false);
-    }
-  };
-
-  const handleCopy = () => {
-    if (rewritten) {
-      navigator.clipboard.writeText(rewritten);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+    } catch { setRewritten("Error generating rewrite."); }
+    finally { setRewriting(false); }
   };
 
   return (
-    <div className="card fade-in overflow-hidden" style={{ borderLeft: `3px solid ${cfg.accent}` }}>
-      <div className="p-5 space-y-3.5">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
+    <div
+      ref={cardRef}
+      onClick={onSelect}
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverEnd}
+      className="border-b cursor-pointer transition-all"
+      style={{
+        borderColor: "var(--border)",
+        background: isSelected ? cfg.badgeBg : isHovered ? "#FAFAF9" : "transparent",
+        borderLeft: `3px solid ${isSelected ? cfg.accent : "transparent"}`,
+      }}
+    >
+      {/* Compact summary — always visible */}
+      <div className="px-4 py-3 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
           <Badge config={cfg} />
-          <span className="text-xs text-[#9A9A98] font-mono mt-0.5 flex-shrink-0">#{index + 1}</span>
+          <span className="text-[10px] text-[#C8C8C6] font-mono flex-shrink-0">#{index + 1}</span>
         </div>
-
-        {/* Claim text */}
-        <p className="text-sm text-[#2A2A28] italic leading-relaxed">
+        <p className={`text-[12px] text-[#2A2A28] italic leading-snug ${isSelected ? "" : "line-clamp-2"}`}>
           &ldquo;{claim.claim}&rdquo;
         </p>
+        <p className="text-[11px] text-[#9A9A98] truncate">{claim.citation}</p>
+      </div>
 
-        {/* Meta */}
-        <div className="flex flex-wrap gap-x-5 gap-y-1">
-          <span className="text-xs text-[#9A9A98]">
-            <span className="font-medium text-[#5A5A58]">Citation</span>{" "}
-            {claim.citation}
-          </span>
-          <span className="text-xs text-[#9A9A98]">
-            <span className="font-medium text-[#5A5A58]">Source</span>{" "}
-            {claim.source_accessed}
-          </span>
-        </div>
+      {/* Expanded detail when selected */}
+      {isSelected && (
+        <div
+          className="px-4 pb-4 pt-3 space-y-3 border-t"
+          style={{ borderColor: `${cfg.accent}33` }}
+          onClick={e => e.stopPropagation()}
+        >
+          <p className="text-[12px] text-[#4A4A48] leading-relaxed">{claim.why}</p>
 
-        {/* Assessment */}
-        <p className="text-sm text-[#4A4A48] leading-relaxed">
-          {claim.why}
-        </p>
+          {claim.citation && claim.citation !== "No citation" && (
+            <div className="rounded-lg border px-3 py-2 bg-[#FAFAF9]" style={{ borderColor: "var(--border)" }}>
+              <p className="text-[9px] font-semibold text-[#9A9A98] uppercase tracking-wider mb-0.5">Source accessed</p>
+              <p className="text-[11px] font-medium text-[#1A1A18]">
+                {SOURCE_LABELS[claim.source_accessed ?? ""] ?? claim.source_accessed ?? "Unknown"}
+              </p>
+            </div>
+          )}
 
-        {/* Suggested fix (from verify route) */}
-        {claim.fix && claim.fix !== "none needed" && !rewritten && (
-          <div className="rounded-xl bg-[#F0F7FF] border border-[#BFDBFE] px-4 py-3">
-            <p className="text-[10px] font-semibold text-[#1D4ED8] uppercase tracking-wider mb-1">Suggested fix</p>
-            <p className="text-sm text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
-          </div>
-        )}
+          {claim.fix && claim.fix !== "none needed" && !rewritten && (
+            <div className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2">
+              <p className="text-[9px] font-semibold text-[#1D4ED8] uppercase tracking-wider mb-1">Suggested fix</p>
+              <p className="text-[11px] text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
+            </div>
+          )}
 
-        {/* Action buttons */}
-        {showActions && (
-          <div className="flex items-center gap-2 pt-0.5">
-            <button
-              onClick={handleRewrite}
-              disabled={rewriting}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-3 py-1.5 text-xs font-medium text-[#5A5A58] hover:bg-[#F7F7F5] hover:border-[#D8D8D6] transition-all disabled:opacity-50"
-            >
-              {rewriting ? <><Spinner size={12} /> Rewriting…</> : <>✏ Rewrite claim</>}
-            </button>
-            <a
-              href={scholarUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-3 py-1.5 text-xs font-medium text-[#5A5A58] hover:bg-[#F7F7F5] hover:border-[#D8D8D6] transition-all"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              Find better source
-            </a>
-          </div>
-        )}
-
-        {/* Rewrite result */}
-        {rewritten && (
-          <div className="slide-down rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] px-4 py-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold text-[#065F46] uppercase tracking-wider">Rewritten version</p>
-              <button
-                onClick={handleCopy}
-                className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
-              >
-                {copied ? "Copied!" : "Copy"}
+          {rewritten && (
+            <div className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-[9px] font-semibold text-[#065F46] uppercase tracking-wider">Rewritten</p>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(rewritten); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+                  className="text-[9px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p className="text-[11px] text-[#14532D] leading-relaxed">{rewritten}</p>
+              <button onClick={() => setRewritten(null)} className="text-[9px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+                Dismiss
               </button>
             </div>
-            <p className="text-sm text-[#14532D] leading-relaxed">{rewritten}</p>
-            <button onClick={() => setRewritten(null)} className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
-              Dismiss
-            </button>
-          </div>
-        )}
-      </div>
+          )}
+
+          {showActions && !rewritten && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRewrite}
+                disabled={rewriting}
+                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-1.5 text-[10px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+              >
+                {rewriting ? <><Spinner size={10} /> Rewriting…</> : <>✏ Rewrite</>}
+              </button>
+              <a
+                href={scholarUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-1.5 text-[10px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
+                onClick={e => e.stopPropagation()}
+              >
+                <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+                Find source
+              </a>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -286,7 +294,7 @@ function ErrorBanner({ error }: { error: string }) {
   );
 }
 
-// ─── Annotated Text ────────────────────────────────────────────────────────────
+// ─── Annotated text helpers ────────────────────────────────────────────────────
 type TextSegment = { type: "text"; content: string } | { type: "claim"; content: string; claim: Claim };
 
 function buildTextSegments(text: string, claims: Claim[]): TextSegment[] {
@@ -316,104 +324,84 @@ function buildTextSegments(text: string, claims: Claim[]): TextSegment[] {
   return segs;
 }
 
-function ClaimInlinePopup({ claim, style, onClose }: {
-  claim: Claim;
-  style: React.CSSProperties;
+// ─── Edit Source Modal ────────────────────────────────────────────────────────
+function EditSourceModal({
+  source, onSave, onClose,
+}: {
+  source: FoundSource;
+  onSave: (title: string, year?: number) => void;
   onClose: () => void;
 }) {
-  const cfg = VERDICT_CONFIG[claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
-  const [rewriting, setRewriting] = useState(false);
-  const [rewritten, setRewritten] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
-  const showActions = claim.verdict === "NOT_SUPPORTED" || claim.verdict === "OVERSTATED" || claim.verdict === "PARTIAL" || claim.verdict === "WRONG_SOURCE";
-
-  const handleRewrite = async () => {
-    setRewriting(true); setRewritten(null);
-    try {
-      const res = await fetch("/api/rewrite-claim", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: claim.claim, citation: claim.citation, verdict: claim.verdict, why: claim.why }),
-      });
-      const data = await res.json();
-      setRewritten(data.rewritten || "Could not generate a rewrite.");
-    } catch { setRewritten("Error generating rewrite."); }
-    finally { setRewriting(false); }
-  };
+  const [title, setTitle] = useState(source.title);
+  const [year, setYear] = useState(source.year?.toString() ?? "");
 
   return (
     <div
-      style={{ ...style, maxHeight: "72vh", overflowY: "auto" }}
-      className="bg-white rounded-2xl border shadow-2xl p-5 space-y-4 text-left"
-      onClick={e => e.stopPropagation()}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.25)" }}
+      onClick={onClose}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <Badge config={cfg} />
-        <button onClick={onClose} className="text-[#BBBBB9] hover:text-[#5A5A58] text-2xl leading-none transition-colors flex-shrink-0">×</button>
-      </div>
+      <div
+        className="bg-white rounded-2xl border shadow-2xl p-6 w-[420px] space-y-4"
+        style={{ borderColor: "var(--border)" }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-[15px] font-semibold text-[#1A1A18]">Edit source</h3>
+          <button onClick={onClose} className="text-[#BBBBB9] hover:text-[#5A5A58] text-2xl leading-none transition-colors">×</button>
+        </div>
 
-      {/* Claim snippet */}
-      <p className="text-[13px] text-[#9A9A98] italic leading-relaxed line-clamp-3 border-l-2 pl-3" style={{ borderColor: cfg.accent }}>&ldquo;{claim.claim}&rdquo;</p>
+        <div className="space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-[#9A9A98]">Citation key</p>
+          <p className="text-sm text-[#5A5A58] font-mono bg-[#F7F7F5] px-3 py-2 rounded-lg">{source.citationKey}</p>
+        </div>
 
-      {/* Why */}
-      <p className="text-[14px] text-[#3A3A38] leading-relaxed">{claim.why}</p>
-
-      {/* Referenced source */}
-      {claim.citation && claim.citation !== "No citation" && (
         <div className="space-y-1.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--text-tertiary)" }}>Referenced source</p>
-          <div className="rounded-xl border border-[#EBEBEA] px-3 py-2.5 bg-[#FAFAF9] space-y-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-medium text-[#9A9A98] uppercase tracking-wide">Article</span>
-              <span className="text-[10px] font-medium" style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0", borderRadius: 999, padding: "1px 7px" }}>
-                {SOURCE_LABELS[claim.source_accessed ?? ""] ?? claim.source_accessed ?? "Unknown"}
-              </span>
-            </div>
-            <p className="text-xs font-medium text-[#1A1A18] leading-snug">{claim.citation}</p>
-          </div>
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#9A9A98]">Title</label>
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            className="w-full rounded-xl border px-3 py-2.5 text-sm text-[#1A1A18] outline-none transition-all"
+            style={{ borderColor: "var(--border)" }}
+            onFocus={e => (e.target.style.borderColor = "#A0A09E")}
+            onBlur={e => (e.target.style.borderColor = "var(--border)")}
+          />
         </div>
-      )}
 
-      {/* Suggested fix */}
-      {claim.fix && claim.fix !== "none needed" && !rewritten && (
-        <div className="rounded-xl bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2.5">
-          <p className="text-[10px] font-semibold text-[#1D4ED8] uppercase tracking-wider mb-1">Suggested fix</p>
-          <p className="text-xs text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
+        <div className="space-y-1.5">
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#9A9A98]">
+            Year <span className="normal-case font-normal text-[#C8C8C6]">(optional)</span>
+          </label>
+          <input
+            type="number"
+            value={year}
+            onChange={e => setYear(e.target.value)}
+            placeholder="e.g. 2021"
+            className="w-full rounded-xl border px-3 py-2.5 text-sm text-[#1A1A18] outline-none transition-all"
+            style={{ borderColor: "var(--border)" }}
+            onFocus={e => (e.target.style.borderColor = "#A0A09E")}
+            onBlur={e => (e.target.style.borderColor = "var(--border)")}
+          />
         </div>
-      )}
 
-      {/* Rewrite result */}
-      {rewritten && (
-        <div className="rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2.5 space-y-1.5">
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] font-semibold text-[#065F46] uppercase tracking-wider">Rewritten</p>
-            <button onClick={() => { navigator.clipboard.writeText(rewritten); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-              className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors">
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <p className="text-xs text-[#14532D] leading-relaxed">{rewritten}</p>
-          <button onClick={() => setRewritten(null)} className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">Dismiss</button>
-        </div>
-      )}
-
-      {/* Actions */}
-      {showActions && !rewritten && (
-        <div className="flex items-center gap-2 pt-0.5">
-          <button onClick={handleRewrite} disabled={rewriting}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-3 py-2 text-xs font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50">
-            {rewriting ? <><Spinner size={11} /> Rewriting…</> : <>✏ Rewrite</>}
+        <div className="flex gap-2.5 pt-1">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border text-sm font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
+            style={{ borderColor: "var(--border)" }}
+          >
+            Cancel
           </button>
-          <a href={scholarUrl} target="_blank" rel="noopener noreferrer"
-            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-3 py-2 text-xs font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all">
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-            Find source
-          </a>
+          <button
+            onClick={() => onSave(title.trim() || source.title, year ? parseInt(year) : undefined)}
+            className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium hover:opacity-90 transition-all"
+            style={{ background: "var(--text-primary)" }}
+          >
+            Save changes
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -460,17 +448,28 @@ export default function Home() {
   const [result, setResult]       = useState<VerificationResult | null>(null);
   const [error, setError]         = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Verdict | "ALL" | "ISSUES">("ALL");
-  const [viewMode, setViewMode] = useState<"cards" | "annotated">("cards");
-  const [popupClaim, setPopupClaim] = useState<Claim | null>(null);
-  const [popupStyle, setPopupStyle] = useState<React.CSSProperties>({});
+
+  // Analysis pane interaction
+  const [selectedClaimIdx, setSelectedClaimIdx] = useState<number | null>(null);
+  const [hoveredClaimIdx, setHoveredClaimIdx]   = useState<number | null>(null);
+
+  // Sources screen UX
+  const [openMenuKey, setOpenMenuKey]   = useState<string | null>(null);
+  const [editingSource, setEditingSource] = useState<FoundSource | null>(null);
+
   const [driveLoading, setDriveLoading] = useState(false);
   const [sessionId, setSessionId] = useState("");
   const [supabaseFiles, setSupabaseFiles] = useState<StoredFileMeta[]>([]);
   const [, startTransition] = useTransition();
 
+  // Refs for two-pane scroll sync
+  const leftPanelRef  = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const claimCardRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const claimMarkRefs = useRef<Record<number, HTMLElement | null>>({});
+
   // ── Session ID + Supabase restore on first load ─────────────────────────────
   useEffect(() => {
-    // Stable session ID persisted in localStorage
     let sid = localStorage.getItem("acv_session_id");
     if (!sid) {
       sid = crypto.randomUUID();
@@ -478,13 +477,11 @@ export default function Home() {
     }
     setSessionId(sid);
 
-    // Fetch any previously uploaded files for this session from Supabase
     fetch(`/api/storage/files?sessionId=${sid}`)
       .then(r => r.ok ? r.json() : [])
       .then((files: StoredFileMeta[]) => {
         if (Array.isArray(files) && files.length > 0) {
           setSupabaseFiles(files);
-          // Also restore them into uploadedSources so they appear immediately
           setUploadedSources(files.map(f => ({
             citationKey: f.citationKey,
             title: f.title,
@@ -495,21 +492,29 @@ export default function Home() {
           })));
         }
       })
-      .catch(() => { /* Supabase not configured yet — silent */ });
+      .catch(() => {});
   }, []);
 
-  // ── localStorage fallback (works even without Supabase configured) ───────────
   useEffect(() => {
     try {
       localStorage.setItem("acv_uploaded_sources", JSON.stringify(uploadedSources));
     } catch { /* ignore quota errors */ }
   }, [uploadedSources]);
 
+  // Close three-dot menus on outside click
+  useEffect(() => {
+    if (!openMenuKey) return;
+    const close = () => setOpenMenuKey(null);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [openMenuKey]);
+
   // ── handleFindSources ───────────────────────────────────────────────────────
   const handleFindSources = async () => {
     if (!introText.trim()) { setError("Please paste your introduction text."); return; }
     setFindPhase("finding"); setError(null);
-    setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null);
+    setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null);
+    setActiveTab("ALL"); setSelectedClaimIdx(null); setHoveredClaimIdx(null);
 
     const msgs = ["Extracting citations…","Searching Semantic Scholar…","Downloading papers…","Extracting text…","Almost done…"];
     let mi = 0; setFindMsg(msgs[0]);
@@ -525,7 +530,6 @@ export default function Home() {
       const found: FoundSource[] = data.found ?? [];
       const missing: MissingSource[] = data.missing ?? [];
 
-      // Auto-match any previously uploaded Supabase files against new missing sources
       const autoMatched: FoundSource[] = [];
       const stillMissing: MissingSource[] = [];
       for (const m of missing) {
@@ -583,7 +587,6 @@ export default function Home() {
       setUploadedSources(p => [...p.filter(s => s.citationKey !== citationKey), newSource]);
       setMissingSources(p => p.filter(m => m.citationKey !== citationKey));
 
-      // Persist to Supabase async (fire-and-forget — never blocks the UI)
       if (sessionId) {
         startTransition(() => {
           fetch("/api/storage/upload", {
@@ -599,7 +602,7 @@ export default function Home() {
                 setSupabaseFiles(p => [...p.filter(f => f.citationKey !== citationKey), meta]);
               }
             })
-            .catch(() => { /* silent — localStorage is the fallback */ });
+            .catch(() => {});
         });
       }
     } finally {
@@ -607,27 +610,89 @@ export default function Home() {
     }
   }, [missingSources, sessionId]);
 
-  // ── handleVerify ────────────────────────────────────────────────────────────
-  const handleClaimClick = useCallback((claim: Claim, e: React.MouseEvent) => {
+  // ── Remove uploaded file (returns source to "needs upload" state) ───────────
+  const handleRemoveUploadFile = useCallback((citationKey: string) => {
+    const source = uploadedSources.find(s => s.citationKey === citationKey);
+    if (!source) return;
+    setUploadedSources(p => p.filter(s => s.citationKey !== citationKey));
+    setMissingSources(p => [
+      ...p,
+      {
+        citationKey: source.citationKey,
+        title: source.title,
+        year: source.year,
+        reason: "Upload removed — drop a PDF to upload again",
+        kind: "not_found" as const,
+      },
+    ]);
+    // Intentionally NOT deleting from Supabase — file stays for future sessions
+  }, [uploadedSources]);
+
+  // ── Delete source entirely ──────────────────────────────────────────────────
+  const handleDeleteSource = useCallback(async (citationKey: string) => {
+    setUploadedSources(p => p.filter(s => s.citationKey !== citationKey));
+    setFoundSources(p => p.filter(s => s.citationKey !== citationKey));
+    setMissingSources(p => p.filter(m => m.citationKey !== citationKey));
+    setSupabaseFiles(p => p.filter(f => f.citationKey !== citationKey));
+
+    if (sessionId) {
+      fetch("/api/storage/delete", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, citationKey }),
+      }).catch(() => {});
+    }
+
+    try {
+      const stored = JSON.parse(localStorage.getItem("acv_uploaded_sources") ?? "[]") as FoundSource[];
+      localStorage.setItem("acv_uploaded_sources",
+        JSON.stringify(stored.filter((s: FoundSource) => s.citationKey !== citationKey)));
+    } catch {}
+  }, [sessionId]);
+
+  // ── Edit source ─────────────────────────────────────────────────────────────
+  const handleSaveEdit = useCallback((title: string, year?: number) => {
+    if (!editingSource) return;
+    const citationKey = editingSource.citationKey;
+    const update = (s: FoundSource) => s.citationKey === citationKey ? { ...s, title, year } : s;
+    setUploadedSources(p => p.map(update));
+    setFoundSources(p => p.map(update));
+    setEditingSource(null);
+  }, [editingSource]);
+
+  // ── Analysis pane interaction handlers ─────────────────────────────────────
+  const handleClaimNavClick = useCallback((claimIdx: number) => {
+    setSelectedClaimIdx(prev => prev === claimIdx ? null : claimIdx);
+    const mark = claimMarkRefs.current[claimIdx];
+    const panel = rightPanelRef.current;
+    if (mark && panel) {
+      const panelRect = panel.getBoundingClientRect();
+      const markRect = mark.getBoundingClientRect();
+      const targetOffset = panelRect.height * 0.30;
+      const markTopInPanel = markRect.top - panelRect.top + panel.scrollTop;
+      panel.scrollTo({ top: Math.max(0, markTopInPanel - targetOffset), behavior: "smooth" });
+    }
+  }, []);
+
+  const handleMarkClick = useCallback((claimIdx: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (popupClaim?.claim === claim.claim) { setPopupClaim(null); return; }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const w = 480;
-    const left = Math.max(16, Math.min(rect.left, window.innerWidth - w - 16));
-    const top = rect.bottom + 10;
-    setPopupStyle({ position: "fixed", top, left, width: w, zIndex: 50 });
-    setPopupClaim(claim);
-  }, [popupClaim]);
+    if (!result) return;
+    const claim = result.claims[claimIdx];
+    setSelectedClaimIdx(claimIdx);
+    // If filtered out, reset to ALL so the card becomes visible
+    const isVisible = activeTab === "ALL" ||
+      (activeTab === "ISSUES" && (claim.verdict === "PARTIAL" || claim.verdict === "OVERSTATED")) ||
+      claim.verdict === activeTab;
+    if (!isVisible) setActiveTab("ALL");
+    setTimeout(() => {
+      const card = claimCardRefs.current[claimIdx];
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, isVisible ? 0 : 50);
+  }, [result, activeTab]);
 
-  useEffect(() => {
-    if (!popupClaim) return;
-    const close = () => setPopupClaim(null);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [popupClaim]);
-
+  // ── handleVerify ────────────────────────────────────────────────────────────
   const handleVerify = async () => {
-    setLoading(true); setError(null); setResult(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null);
+    setLoading(true); setError(null); setResult(null);
+    setActiveTab("ALL"); setSelectedClaimIdx(null); setHoveredClaimIdx(null);
     const msgs = ["Extracting claims…","Checking source texts…","Searching the web for missing sources…","Evaluating evidence…","Generating report…"];
     let mi = 0; setLoadingMsg(msgs[0]);
     const iv = setInterval(() => { mi = (mi + 1) % msgs.length; setLoadingMsg(msgs[mi]); }, 4000);
@@ -669,28 +734,6 @@ export default function Home() {
       URL.revokeObjectURL(url);
     } catch (e) { setError(e instanceof Error ? e.message : "Export failed"); }
   };
-
-  // ── Delete uploaded source ──────────────────────────────────────────────────
-  const handleDeleteUpload = useCallback(async (citationKey: string) => {
-    // Remove from local state immediately (optimistic)
-    setUploadedSources(p => p.filter(s => s.citationKey !== citationKey));
-    setSupabaseFiles(p => p.filter(f => f.citationKey !== citationKey));
-
-    // Delete from Supabase async
-    if (sessionId) {
-      fetch("/api/storage/delete", {
-        method: "DELETE", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, citationKey }),
-      }).catch(() => {});
-    }
-
-    // Update localStorage
-    try {
-      const stored = JSON.parse(localStorage.getItem("acv_uploaded_sources") ?? "[]") as FoundSource[];
-      localStorage.setItem("acv_uploaded_sources",
-        JSON.stringify(stored.filter((s: FoundSource) => s.citationKey !== citationKey)));
-    } catch {}
-  }, [sessionId]);
 
   // ── Google Drive ────────────────────────────────────────────────────────────
   const handleGoogleDrive = useCallback(async () => {
@@ -773,7 +816,6 @@ export default function Home() {
       <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
         style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
         <div className="max-w-7xl mx-auto px-10 h-14 flex items-center justify-between">
-          {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-lg bg-[#1A1A18] flex items-center justify-center flex-shrink-0">
               <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -782,11 +824,9 @@ export default function Home() {
             </div>
             <span className="text-sm font-semibold text-[#1A1A18]">Claim Verifier</span>
           </div>
-          {/* Step indicator */}
           <StepIndicator current={currentStep} />
           <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
-        {/* Progress bar */}
         <div className="h-0.5 transition-all duration-700 ease-out"
           style={{ width: `${(currentStep / 3) * 100}%`, background: "#1A1A18" }} />
       </header>
@@ -794,17 +834,15 @@ export default function Home() {
       {/* ── Step 1: Draft + References ── */}
       {currentStep === 1 && (
         <main className="flex-1 flex flex-col max-w-7xl mx-auto w-full px-10 pt-12 pb-8 step-enter">
-          {/* Hero */}
           <div className="mb-8">
             <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-2">
               Verify your academic claims
             </h1>
             <p className="text-[15px] text-[#9A9A98]">
-              Paste your draft and reference list — we'll verify every claim against its cited source.
+              Paste your draft and reference list — we&apos;ll verify every claim against its cited source.
             </p>
           </div>
 
-          {/* Two-column inputs — grow to fill available height */}
           <div className="grid grid-cols-2 gap-5" style={{ flex: 1, minHeight: 0 }}>
             <InputCard
               label="Draft"
@@ -822,7 +860,6 @@ export default function Home() {
             />
           </div>
 
-          {/* Button + error */}
           <div className="mt-5 space-y-3">
             <button onClick={handleFindSources} disabled={findPhase === "finding" || !introText.trim()}
               className="btn-primary w-full h-14 rounded-xl text-[15px] font-semibold text-white flex items-center justify-center gap-2.5"
@@ -846,72 +883,103 @@ export default function Home() {
 
       {/* ── Step 2: Sources ── */}
       {currentStep === 2 && (
-        <main className="flex-1 max-w-7xl mx-auto w-full px-10 pt-7 pb-10 step-enter">
+        <main className="flex-1 max-w-7xl mx-auto w-full px-10 pt-5 pb-10 step-enter">
           {/* Step header */}
-          <div className="flex items-end justify-between mb-8">
+          <div className="flex items-end justify-between mb-5">
             <div>
               <button
                 onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); }}
-                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors mb-3">
+                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors mb-2">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
                 Back to Draft
               </button>
-              <h1 className="text-[32px] font-semibold tracking-tight text-[#1A1A18] mb-2">Sources</h1>
-              <p className="text-[16px] font-medium text-[#5A5A58]">
-                <span className="text-[#1A1A18] font-semibold">{resolvedSources}</span> of <span className="font-semibold text-[#1A1A18]">{totalSources}</span> retrieved
+              <h1 className="text-[28px] font-semibold tracking-tight text-[#1A1A18] mb-1">Sources</h1>
+              <p className="text-[15px] font-medium text-[#5A5A58]">
+                <span className="text-[#1A1A18] font-semibold">{resolvedSources}</span> of{" "}
+                <span className="font-semibold text-[#1A1A18]">{totalSources}</span> retrieved
                 {totalSources > 0 && <span className="text-[#9A9A98] font-normal"> · {Math.round((resolvedSources / totalSources) * 100)}% full text</span>}
               </p>
             </div>
           </div>
 
-          <div className="grid gap-10" style={{ gridTemplateColumns: "1fr 380px" }}>
+          <div className="grid gap-6" style={{ gridTemplateColumns: "1fr 360px" }}>
             {/* Sources list */}
-            <div className="space-y-6 min-w-0">
+            <div className="space-y-5 min-w-0">
               {resolvedSources > 0 && (
-                <div className="space-y-2.5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98] px-1 mb-3">Retrieved</p>
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98] px-1 mb-2">Retrieved</p>
                   {[...foundSources, ...uploadedSources].map(s => (
-                    <div key={s.citationKey} className="card px-6 py-5 flex items-start gap-4">
-                      <div className="h-6 w-6 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div key={s.citationKey} className="card px-4 py-3.5 flex items-center gap-3">
+                      <div className="h-6 w-6 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
                         <span className="text-[#10B981] font-bold text-[10px]">✓</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1A1A18] mb-0.5">{s.citationKey}</p>
-                        <p className="text-[13px] text-[#9A9A98] leading-snug">{s.title}</p>
+                        <p className="text-sm font-semibold text-[#1A1A18]">{s.citationKey}</p>
+                        <p className="text-[12px] text-[#9A9A98] leading-snug truncate">{s.title}</p>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-                        <span className="text-[11px] font-medium rounded-full px-3 py-1"
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[11px] font-medium rounded-full px-2.5 py-0.5"
                           style={{ background: "#F0FDF4", color: "#065F46", border: "1px solid #BBF7D0" }}>
                           {SOURCE_LABELS[s.source ?? ""] ?? s.source}
                         </span>
                         {s.source === "uploaded" && (
-                          <button
-                            onClick={() => handleDeleteUpload(s.citationKey)}
-                            title="Remove this upload"
-                            className="h-5 w-5 rounded-full flex items-center justify-center text-[#C8C8C6] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-all text-xs">
-                            ×
-                          </button>
+                          <>
+                            {/* X: remove upload file only, returns to needs-upload */}
+                            <button
+                              onClick={() => handleRemoveUploadFile(s.citationKey)}
+                              title="Remove uploaded file"
+                              className="h-6 w-6 rounded-full flex items-center justify-center text-[#C8C8C6] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-all text-sm leading-none">
+                              ×
+                            </button>
+                            {/* Three-dot menu */}
+                            <div className="relative" onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => setOpenMenuKey(openMenuKey === s.citationKey ? null : s.citationKey)}
+                                title="More options"
+                                className="h-6 w-6 rounded flex items-center justify-center text-[#C8C8C6] hover:text-[#5A5A58] hover:bg-[#F0F0EE] transition-all text-xs font-bold tracking-tighter">
+                                •••
+                              </button>
+                              {openMenuKey === s.citationKey && (
+                                <div className="absolute right-0 top-full mt-1 bg-white border rounded-xl shadow-xl z-20 w-40 py-1 overflow-hidden"
+                                  style={{ borderColor: "var(--border)" }}>
+                                  <button
+                                    onClick={() => { setEditingSource(s); setOpenMenuKey(null); }}
+                                    className="w-full px-4 py-2.5 text-[13px] text-left text-[#3A3A38] hover:bg-[#F7F7F5] transition-colors">
+                                    Edit source
+                                  </button>
+                                  <button
+                                    onClick={() => { handleDeleteSource(s.citationKey); setOpenMenuKey(null); }}
+                                    className="w-full px-4 py-2.5 text-[13px] text-left text-red-600 hover:bg-red-50 transition-colors">
+                                    Delete source
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
                     </div>
                   ))}
                 </div>
               )}
+
               {missingSources.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center justify-between px-1 mb-2">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">
                       Needs upload ({missingSources.length})
                     </p>
                     <button onClick={handleGoogleDrive} disabled={driveLoading}
                       className="inline-flex items-center gap-1.5 text-xs text-[#5A5A58] hover:text-[#1A1A18] transition-colors disabled:opacity-50">
                       {driveLoading ? <Spinner size={12} /> : (
+                        /* Official Google Drive icon colors */
                         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none">
-                          <path d="M4.5 18L8 12l3.5 6H4.5z" fill="#34A853"/>
-                          <path d="M12 6L8 12H16l-4-6z" fill="#4285F4"/>
-                          <path d="M16 12l3.5 6H8.5L12 12h4z" fill="#EA4335"/>
+                          <path d="M4.5 19L8.5 12H11.5L7.5 19H4.5Z" fill="#34A853"/>
+                          <path d="M12 4.5L8.5 11H15.5L12 4.5Z" fill="#4285F4"/>
+                          <path d="M15.5 12L19.5 19H12.5L15.5 12Z" fill="#FBBC04"/>
+                          <path d="M7.5 19H16.5" stroke="#34A853" strokeWidth="0"/>
                         </svg>
                       )}
                       Google Drive
@@ -925,28 +993,29 @@ export default function Home() {
                   ))}
                 </div>
               )}
+
               {totalSources === 0 && (
                 <p className="text-[15px] text-[#9A9A98] text-center py-20">No citations detected in your draft.</p>
               )}
             </div>
 
-            {/* Right panel */}
-            <div className="space-y-5">
-              <div className="card p-6 space-y-5">
-                <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
-                <div className="space-y-4">
+            {/* Right panel — summary + verify */}
+            <div className="space-y-4">
+              <div className="card p-5 space-y-4">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Summary</p>
+                <div className="space-y-3">
                   {[
                     { label: "Total citations", value: totalSources, color: "#1A1A18" },
                     { label: "Full text", value: resolvedSources, color: "#10B981" },
                     ...(missingSources.length > 0 ? [{ label: "Need upload", value: missingSources.length, color: "#F59E0B" }] : []),
                   ].map(row => (
                     <div key={row.label} className="flex items-center justify-between">
-                      <span className="text-[15px] text-[#5A5A58]">{row.label}</span>
-                      <span className="text-[15px] font-bold tabular-nums" style={{ color: row.color }}>{row.value}</span>
+                      <span className="text-[14px] text-[#5A5A58]">{row.label}</span>
+                      <span className="text-[14px] font-bold tabular-nums" style={{ color: row.color }}>{row.value}</span>
                     </div>
                   ))}
                 </div>
-                <div className="h-2 rounded-full bg-[#F0F0EE] overflow-hidden">
+                <div className="h-1.5 rounded-full bg-[#F0F0EE] overflow-hidden">
                   <div className="h-full rounded-full bg-[#10B981] transition-all duration-700"
                     style={{ width: totalSources > 0 ? `${(resolvedSources / totalSources) * 100}%` : "0%" }} />
                 </div>
@@ -975,149 +1044,209 @@ export default function Home() {
         </main>
       )}
 
-      {/* ── Step 3: Results ── */}
+      {/* ── Step 3: Analysis (two-pane) ── */}
       {currentStep === 3 && result && (
-        <main className="flex-1 max-w-7xl mx-auto w-full px-10 pt-7 pb-10 step-enter">
-          {/* Header */}
-          <div className="flex items-end justify-between pb-6 mb-8 border-b" style={{ borderColor: "var(--border)" }}>
-            <div>
+        <div className="step-enter flex flex-col" style={{ height: "calc(100vh - 57px)", overflow: "hidden" }}>
+
+          {/* Analysis header bar */}
+          <div className="flex items-center justify-between px-8 py-3.5 border-b flex-shrink-0"
+            style={{ borderColor: "var(--border)", background: "var(--background)" }}>
+            <div className="flex items-center gap-4">
               <button
-                onClick={() => { setFindPhase("idle"); setFoundSources([]); setMissingSources([]); setUploadedSources([]); setResult(null); setError(null); setActiveTab("ALL"); setViewMode("cards"); setPopupClaim(null); }}
-                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors mb-3">
+                onClick={() => {
+                  setFindPhase("idle"); setFoundSources([]); setMissingSources([]);
+                  setUploadedSources([]); setResult(null); setError(null);
+                  setActiveTab("ALL"); setSelectedClaimIdx(null); setHoveredClaimIdx(null);
+                }}
+                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
                 Start over
               </button>
-              <h1 className="text-[34px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
+              <div className="w-px h-4 bg-[#E0E0DE]" />
+              <h1 className="text-[18px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
             </div>
-            <div className="flex items-center gap-3">
-              {/* View mode toggle */}
-              <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: "var(--border)" }}>
-                {(["cards", "annotated"] as const).map(mode => (
-                  <button key={mode} onClick={() => { setViewMode(mode); setPopupClaim(null); }}
-                    className="px-4 py-2 text-sm font-medium transition-all flex items-center gap-2"
-                    style={{
-                      background: viewMode === mode ? "var(--text-primary)" : "var(--surface)",
-                      color: viewMode === mode ? "white" : "var(--text-secondary)",
-                      borderRight: mode === "cards" ? `1px solid var(--border)` : undefined,
-                    }}>
-                    {mode === "cards"
-                      ? <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>Cards</>
-                      : <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>Annotated</>
-                    }
-                  </button>
-                ))}
-              </div>
-              {(["docx","pdf"] as const).map(fmt => (
-                <button key={fmt} onClick={() => handleExport(fmt)}
-                  className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium transition-all"
-                  style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
-                >
-                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clipRule="evenodd" />
-                  </svg>
-                  {fmt === "docx" ? "Word" : "PDF"}
-                </button>
-              ))}
+
+            {/* Export buttons */}
+            <div className="flex items-center gap-2">
+              {/* Word export */}
+              <button
+                onClick={() => handleExport("docx")}
+                className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="2" width="14" height="16" rx="2" fill="#185ABD" fillOpacity="0.15"/>
+                  <path d="M3 6h14" stroke="#185ABD" strokeWidth="1.2" strokeOpacity="0.4"/>
+                  <path d="M6 10l1.2 5L10 11l2.8 4L15 10" stroke="#185ABD" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                Word
+              </button>
+              {/* PDF export */}
+              <button
+                onClick={() => handleExport("pdf")}
+                className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
+              >
+                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="2" width="14" height="16" rx="2" fill="#DC2626" fillOpacity="0.12"/>
+                  <path d="M3 6h14" stroke="#DC2626" strokeWidth="1.2" strokeOpacity="0.4"/>
+                  <path d="M6.5 10h3c.8 0 1.5.7 1.5 1.5S10.3 13 9.5 13H6.5v-3zM13 10v3M11 11.5h2" stroke="#DC2626" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                PDF
+              </button>
             </div>
           </div>
 
-          {/* Stat-filter cards — hidden in annotated mode */}
-          {stats && viewMode === "cards" && (() => {
-            const cards: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
-              { key: "ALL",          label: "Total",         value: stats.total,        color: "var(--text-primary)", activeBg: "#F7F7F5", activeBorder: "var(--text-primary)" },
-              { key: "SUPPORTED",    label: "Supported",     value: stats.supported,    color: "#10B981",             activeBg: "#F0FDF4", activeBorder: "#10B981" },
-              { key: "ISSUES",       label: "Issues",        value: stats.issues,       color: "#F59E0B",             activeBg: "#FFFBEB", activeBorder: "#F59E0B" },
-              { key: "NOT_SUPPORTED",label: "Not Supported", value: stats.notSupported, color: "#EF4444",             activeBg: "#FEF2F2", activeBorder: "#EF4444" },
-              { key: "UNVERIFIABLE", label: "Unverifiable",  value: stats.unverifiable, color: "#9CA3AF",             activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
-            ];
-            return (
-              <div className="grid grid-cols-5 gap-3 mb-8">
-                {cards.map(c => {
-                  const active = activeTab === c.key;
-                  return (
-                    <button key={c.key} onClick={() => setActiveTab(c.key)}
-                      className="card px-4 py-3 text-center transition-all focus:outline-none"
-                      style={{
-                        background: active ? c.activeBg : "var(--surface)",
-                        borderColor: active ? c.activeBorder : "var(--border)",
-                        borderWidth: active ? "1.5px" : "1px",
-                        transform: active ? "translateY(-1px)" : "none",
-                        boxShadow: active ? `0 4px 12px ${c.color}22` : undefined,
-                      }}>
-                      <div className="text-[22px] font-bold tabular-nums leading-none" style={{ color: c.color }}>{c.value}</div>
-                      <div className="text-[10px] font-semibold mt-1.5 uppercase tracking-wider" style={{ color: active ? c.color : "var(--text-tertiary)" }}>{c.label}</div>
-                    </button>
-                  );
-                })}
+          {/* Two-pane layout */}
+          <div className="flex flex-1 min-h-0">
+
+            {/* ── Left panel: Claims navigation ── */}
+            <div
+              ref={leftPanelRef}
+              className="flex-shrink-0 overflow-y-auto border-r flex flex-col"
+              style={{ width: "28%", borderColor: "var(--border)" }}
+            >
+              {/* Filter pills */}
+              {stats && (() => {
+                const filterItems: { key: Verdict | "ALL" | "ISSUES"; label: string; value: number; color: string; activeBg: string; activeBorder: string }[] = [
+                  { key: "ALL",          label: "All",          value: stats.total,        color: "#1A1A18",  activeBg: "#F0F0EE", activeBorder: "#C8C8C6" },
+                  { key: "SUPPORTED",    label: "Supported",    value: stats.supported,    color: "#10B981",  activeBg: "#F0FDF4", activeBorder: "#10B981" },
+                  { key: "ISSUES",       label: "Issues",       value: stats.issues,       color: "#F59E0B",  activeBg: "#FFFBEB", activeBorder: "#F59E0B" },
+                  { key: "NOT_SUPPORTED",label: "Not supported",value: stats.notSupported, color: "#EF4444",  activeBg: "#FEF2F2", activeBorder: "#EF4444" },
+                  { key: "UNVERIFIABLE", label: "Unverifiable", value: stats.unverifiable, color: "#9CA3AF",  activeBg: "#F9FAFB", activeBorder: "#9CA3AF" },
+                ];
+                return (
+                  <div className="px-4 py-3 border-b flex flex-wrap gap-1.5 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
+                    {filterItems.map(f => {
+                      const active = activeTab === f.key;
+                      return (
+                        <button key={f.key} onClick={() => setActiveTab(f.key)}
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-all"
+                          style={{
+                            background: active ? f.activeBg : "transparent",
+                            color: active ? f.color : "var(--text-tertiary)",
+                            border: `1px solid ${active ? f.activeBorder : "var(--border)"}`,
+                          }}>
+                          <span className="tabular-nums font-bold">{f.value}</span>
+                          {f.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+
+              {/* Claim nav cards */}
+              <div className="flex-1">
+                {filteredClaims.length === 0 ? (
+                  <p className="text-xs text-center py-10 text-[#9A9A98] px-4">No claims in this category.</p>
+                ) : (
+                  filteredClaims.map(claim => {
+                    const globalIdx = result.claims.indexOf(claim);
+                    return (
+                      <ClaimNavCard
+                        key={globalIdx}
+                        claim={claim}
+                        index={globalIdx}
+                        isSelected={selectedClaimIdx === globalIdx}
+                        isHovered={hoveredClaimIdx === globalIdx}
+                        onSelect={() => handleClaimNavClick(globalIdx)}
+                        onHover={() => setHoveredClaimIdx(globalIdx)}
+                        onHoverEnd={() => setHoveredClaimIdx(null)}
+                        cardRef={el => { claimCardRefs.current[globalIdx] = el; }}
+                      />
+                    );
+                  })
+                )}
               </div>
-            );
-          })()}
 
-          {/* Cards view */}
-          {viewMode === "cards" && (
-            <div className="space-y-3">
-              {filteredClaims.length === 0
-                ? <p className="text-sm text-center py-10 text-[#9A9A98]">No claims in this category.</p>
-                : filteredClaims.map((claim, i) => (
-                    <ClaimCard key={i} claim={claim} index={result.claims.indexOf(claim)} />
-                  ))
-              }
+              {/* Overall Assessment — pinned at bottom of left panel */}
+              {result.summary && (
+                <div className="border-t p-4 flex-shrink-0" style={{ borderColor: "var(--border)" }}>
+                  <p className="text-[9px] font-semibold uppercase tracking-widest text-[#9A9A98] mb-2">Overall Assessment</p>
+                  <p className="text-[12px] leading-relaxed text-[#3A3A38]">{result.summary}</p>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Annotated text view */}
-          {viewMode === "annotated" && (
-            <div className="space-y-5">
-              {/* Annotated header bar: hint + legend */}
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <p className="text-sm text-[#9A9A98]">Click any highlighted phrase to see details.</p>
-                <div className="flex flex-wrap items-center gap-4">
+            {/* ── Right panel: Annotated text ── */}
+            <div
+              ref={rightPanelRef}
+              className="flex-1 overflow-y-auto"
+              style={{ padding: "28px 40px 40px" }}
+            >
+              {/* Legend */}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-6">
+                <p className="text-xs text-[#9A9A98]">Click a highlighted phrase for details.</p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
                   {(Object.entries(VERDICT_CONFIG) as [Verdict, typeof VERDICT_CONFIG[Verdict]][]).map(([verdict, cfg]) => (
-                    <span key={verdict} className="flex items-center gap-1.5 text-xs text-[#6A6A68] font-medium">
-                      <span style={{ display: "inline-block", width: 11, height: 11, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 3, flexShrink: 0 }} />
+                    <span key={verdict} className="flex items-center gap-1.5 text-[11px] text-[#6A6A68] font-medium">
+                      <span style={{ display: "inline-block", width: 10, height: 10, background: cfg.badgeBg, border: `2px solid ${cfg.accent}`, borderRadius: 3, flexShrink: 0 }} />
                       {cfg.label}
                     </span>
                   ))}
                 </div>
               </div>
-              {/* Constrained-width annotated text — ~75ch for comfortable reading */}
-              <div className="card p-8 cursor-default max-w-[860px]" onClick={() => setPopupClaim(null)}>
+
+              {/* Annotated text */}
+              <div className="card p-8 cursor-default">
                 <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">
                   {buildTextSegments(introText, result.claims).map((seg, i) => {
                     if (seg.type === "text") return <span key={i}>{seg.content}</span>;
+                    const globalIdx = result.claims.indexOf(seg.claim);
                     const cfg = VERDICT_CONFIG[seg.claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
-                    const isActive = popupClaim?.claim === seg.claim.claim;
+                    const isSelected = selectedClaimIdx === globalIdx;
+                    const isHovered = hoveredClaimIdx === globalIdx;
                     return (
-                      <mark key={i} onClick={e => handleClaimClick(seg.claim, e)}
-                        style={{ background: isActive ? cfg.badgeBg : `${cfg.badgeBg}99`, color: "inherit",
-                          borderBottom: `2px solid ${cfg.accent}`, borderRadius: "2px", padding: "0 2px",
-                          cursor: "pointer", transition: "background 0.15s" }}
-                        title={cfg.label}>
+                      <mark
+                        key={i}
+                        ref={el => { if (el) claimMarkRefs.current[globalIdx] = el; }}
+                        onClick={e => handleMarkClick(globalIdx, e)}
+                        onMouseEnter={() => setHoveredClaimIdx(globalIdx)}
+                        onMouseLeave={() => setHoveredClaimIdx(null)}
+                        style={{
+                          background: isSelected
+                            ? cfg.badgeBg
+                            : isHovered
+                              ? `${cfg.badgeBg}DD`
+                              : `${cfg.badgeBg}88`,
+                          color: "inherit",
+                          borderBottom: `2px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}CC` : `${cfg.accent}77`}`,
+                          borderRadius: "2px",
+                          padding: "1px 2px",
+                          cursor: "pointer",
+                          transition: "background 0.15s, border-color 0.15s",
+                          outline: isSelected ? `2px solid ${cfg.accent}33` : undefined,
+                          outlineOffset: "1px",
+                        }}
+                        title={cfg.label}
+                      >
                         {seg.content}
                       </mark>
                     );
                   })}
                 </p>
               </div>
+
+              {error && <div className="mt-4"><ErrorBanner error={error} /></div>}
             </div>
-          )}
-
-          {/* Popup */}
-          {popupClaim && viewMode === "annotated" && (
-            <ClaimInlinePopup claim={popupClaim} style={popupStyle} onClose={() => setPopupClaim(null)} />
-          )}
-
-          {/* Overall Assessment */}
-          <div className="card p-6 space-y-3 mt-8">
-            <p className="text-xs font-semibold uppercase tracking-widest text-[#9A9A98]">Overall Assessment</p>
-            <p className="text-[15px] leading-relaxed text-[#3A3A38]">{result.summary}</p>
           </div>
-          {error && <div className="mt-4"><ErrorBanner error={error} /></div>}
-        </main>
+        </div>
+      )}
+
+      {/* Edit Source Modal */}
+      {editingSource && (
+        <EditSourceModal
+          source={editingSource}
+          onSave={handleSaveEdit}
+          onClose={() => setEditingSource(null)}
+        />
       )}
     </div>
   );
