@@ -93,7 +93,8 @@ function ClaimNavCard({
       style={{
         borderColor: "var(--border)",
         background: isSelected ? cfg.badgeBg : isHovered ? `${cfg.badgeBg}55` : "transparent",
-        borderLeft: `3px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}44` : "transparent"}`,
+        borderLeft: `${isSelected ? 4 : 3}px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}44` : "transparent"}`,
+        boxShadow: isSelected ? `inset 4px 0 14px ${cfg.accent}12` : undefined,
       }}
     >
       {/* Compact summary — always visible */}
@@ -197,14 +198,14 @@ function MissingRow({ source, onUpload, uploadError, uploading }: {
   };
 
   return (
-    <div className="card px-4 py-3.5 space-y-2.5">
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 text-sm flex-shrink-0" style={{ color: source.kind === "abstract_only" ? "#F59E0B" : "#EF4444" }}>
+    <div className="card px-5 py-4 space-y-3">
+      <div className="flex items-start gap-3.5">
+        <span className="mt-0.5 text-[15px] flex-shrink-0" style={{ color: source.kind === "abstract_only" ? "#F59E0B" : "#EF4444" }}>
           {source.kind === "abstract_only" ? "≈" : "✕"}
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[#1A1A18] truncate">{source.citationKey}</p>
-          {source.title && <p className="text-xs text-[#9A9A98] truncate mt-0.5">{source.title}</p>}
+          <p className="text-[14px] font-medium text-[#1A1A18] truncate">{source.citationKey}</p>
+          {source.title && <p className="text-[13px] text-[#9A9A98] truncate mt-0.5">{source.title}</p>}
           <p className="text-xs text-[#B45309] mt-1">{source.reason}</p>
         </div>
       </div>
@@ -683,9 +684,16 @@ export default function Home() {
       (activeTab === "ISSUES" && (claim.verdict === "PARTIAL" || claim.verdict === "OVERSTATED")) ||
       claim.verdict === activeTab;
     if (!isVisible) setActiveTab("ALL");
+    // Scroll left panel so selected card appears near the top (~20px offset)
     setTimeout(() => {
       const card = claimCardRefs.current[claimIdx];
-      if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const panel = leftPanelRef.current;
+      if (card && panel) {
+        const panelRect = panel.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const cardTopInPanel = cardRect.top - panelRect.top + panel.scrollTop;
+        panel.scrollTo({ top: Math.max(0, cardTopInPanel - 20), behavior: "smooth" });
+      }
     }, isVisible ? 0 : 50);
   }, [result, activeTab]);
 
@@ -815,13 +823,12 @@ export default function Home() {
       {/* ── Header ── */}
       <header className="sticky top-0 z-20 border-b overflow-hidden flex-shrink-0"
         style={{ background: "rgba(247,247,245,0.92)", backdropFilter: "blur(14px)", borderColor: "var(--border)" }}>
-        <div className="max-w-7xl mx-auto px-10 h-14 flex items-center justify-between">
-          <span className="text-[15px] font-semibold text-[#1A1A18] tracking-tight">Claim Verifier</span>
+        <div className="max-w-7xl mx-auto pl-6 pr-10 h-14 flex items-center justify-between">
+          <span className="text-[16px] font-semibold text-[#1A1A18] tracking-tight">Claim Verifier</span>
           <StepIndicator current={currentStep} />
           <span className="text-xs text-[#9A9A98]">Powered by Claude</span>
         </div>
-        <div className="h-0.5 transition-all duration-700 ease-out"
-          style={{ width: `${(currentStep / 3) * 100}%`, background: "#1A1A18" }} />
+        <div className="h-px w-full" style={{ background: "#1A1A18" }} />
       </header>
 
       {/* ── Step 1: Draft + References ── */}
@@ -904,13 +911,13 @@ export default function Home() {
                 <div className="space-y-2">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98] px-1 mb-2">Retrieved</p>
                   {[...foundSources, ...uploadedSources].map(s => (
-                    <div key={s.citationKey} className="card px-4 py-3.5 flex items-center gap-3">
-                      <div className="h-6 w-6 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
-                        <span className="text-[#10B981] font-bold text-[10px]">✓</span>
+                    <div key={s.citationKey} className="card px-5 py-4 flex items-center gap-3.5">
+                      <div className="h-7 w-7 rounded-full bg-[#F0FDF4] border border-[#BBF7D0] flex items-center justify-center flex-shrink-0">
+                        <span className="text-[#10B981] font-bold text-[11px]">✓</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-[#1A1A18]">{s.citationKey}</p>
-                        <p className="text-[12px] text-[#9A9A98] leading-snug truncate">{s.title}</p>
+                        <p className="text-[14px] font-semibold text-[#1A1A18]">{s.citationKey}</p>
+                        <p className="text-[13px] text-[#9A9A98] leading-snug truncate mt-0.5">{s.title}</p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="text-[11px] font-medium rounded-full px-2.5 py-0.5"
@@ -1062,14 +1069,14 @@ export default function Home() {
                   setUploadedSources([]); setResult(null); setError(null);
                   setActiveTab("ALL"); setSelectedClaimIdx(null); setHoveredClaimIdx(null);
                 }}
-                className="inline-flex items-center gap-1 text-[13px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+                className="inline-flex items-center gap-1 text-[14px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
                 <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
                 Start over
               </button>
               <div className="w-px h-4 bg-[#E0E0DE]" />
-              <h1 className="text-[18px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
+              <h1 className="text-[20px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
             </div>
 
             {/* Export buttons */}
@@ -1192,9 +1199,6 @@ export default function Home() {
               className="flex-1 overflow-y-auto"
               style={{ padding: "28px 40px 40px" }}
             >
-              {/* Minimal interaction hint — no legend needed, colors are self-explanatory */}
-              <p className="text-[12px] text-[#C0C0BE] mb-5">Click any highlighted phrase to view details.</p>
-
               {/* Annotated text */}
               <div className="card p-8 cursor-default">
                 <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">
