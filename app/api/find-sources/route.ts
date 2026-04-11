@@ -8,6 +8,7 @@ import {
   fetchAndExtractText,
   truncate,
 } from "@/lib/academic-apis";
+import { loadLibraryIndex, getLibraryPdfSignedUrl, type LibraryEntry } from "@/lib/supabase";
 import type { ParsedCitation, FoundSource, MissingSource, FindSourcesResult } from "@/lib/types";
 
 export const maxDuration = 120;
@@ -102,10 +103,61 @@ Rules:
   return { citations: [], parseError: `Citation extraction failed to return valid JSON. Raw response: ${raw.slice(0, 300)}` };
 }
 
+// ── Library matching helpers ──────────────────────────────────────────────────
+
+/** Normalise a title for fuzzy comparison: lowercase, strip punctuation, collapse spaces. */
+function normTitle(t: string): string {
+  return t.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Returns the library entry that best matches the given citation, or undefined
+ * if no confident match is found.
+ *
+ * Match criteria (both must pass):
+ *   1. Title: normalised strings share ≥70% of their shorter length as a
+ *      leading prefix, OR one fully contains the other.
+ *   2. Year: if both are present they may differ by at most 1 (advance-online).
+ */
+function matchLibraryEntry(
+  citation: ParsedCitation,
+  library: LibraryEntry[]
+): LibraryEntry | undefined {
+  if (!citation.title || library.length === 0) return undefined;
+
+  const needle = normTitle(citation.title);
+
+  return library.find((entry) => {
+    if (!entry.title) return false;
+    const hay = normTitle(entry.title);
+
+    // Year guard (soft: allow ±1 for advance-online publications)
+    if (
+      citation.year && entry.year &&
+      Math.abs(citation.year - entry.year) > 1
+    ) return false;
+
+    // Exact match after normalisation
+    if (needle === hay) return true;
+
+    // Containment check (handles truncated or subtitle-less titles)
+    if (hay.includes(needle) || needle.includes(hay)) return true;
+
+    // Prefix overlap: the shorter title's first 70% must appear in the other
+    const shorter = needle.length <= hay.length ? needle : hay;
+    const longer  = needle.length <= hay.length ? hay    : needle;
+    const prefixLen = Math.floor(shorter.length * 0.70);
+    if (prefixLen >= 20 && longer.includes(shorter.slice(0, prefixLen))) return true;
+
+    return false;
+  });
+}
+
 // ── Phase B: Resolve one citation to a FoundSource or MissingSource ──────────
 
 async function resolveCitation(
   citation: ParsedCitation,
+  library: LibraryEntry[],
   s2ApiKey?: string,
   unpaywallEmail?: string,
   coreApiKey?: string
@@ -122,6 +174,31 @@ async function resolveCitation(
         kind: "not_found",
       },
     };
+  }
+
+  // ── 0. Private Supabase library (papers/ folder) ──────────────────────────
+  const libraryMatch = matchLibraryEntry(citation, library);
+  if (libraryMatch) {
+    const signedUrl = await getLibraryPdfSignedUrl(libraryMatch.folder);
+    if (signedUrl) {
+      const result = await tryExtract(signedUrl);
+      if (result) {
+        console.log(`[find-sources] library hit: ${libraryMatch.folder}`);
+        return {
+          found: {
+            citationKey,
+            title: libraryMatch.title ?? title,
+            year: libraryMatch.year ?? year,
+            accessLevel: "Full text",
+            text: result,
+            url: `supabase://papers/${libraryMatch.folder}/paper.pdf`,
+            source: "uploaded" as const,
+          },
+        };
+      }
+    }
+    // If signed-URL or extraction failed, fall through to web sources
+    console.warn(`[find-sources] library match for "${libraryMatch.folder}" but PDF extraction failed — falling through`);
   }
 
   // ── 1. Semantic Scholar ────────────────────────────────────────────────────
@@ -276,11 +353,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json<FindSourcesResult>({ found: [], missing: [] });
     }
 
+    // Load the private library index once — shared across all citation lookups.
+    // Gracefully returns [] if Supabase is unconfigured or the folder is empty.
+    const library = await loadLibraryIndex();
+    if (library.length > 0) {
+      console.log(`[find-sources] library loaded: ${library.length} entries (${library.map(e => e.folder).join(", ")})`);
+    }
+
     // Phase B: resolve in parallel with stagger
     const results = await Promise.all(
       citations.map(async (citation, i) => {
         await delay(i * 60); // 60ms stagger
-        return resolveCitation(citation, s2ApiKey, unpaywallEmail, coreApiKey);
+        return resolveCitation(citation, library, s2ApiKey, unpaywallEmail, coreApiKey);
       })
     );
 
