@@ -5,6 +5,7 @@ import type { StoredFileMeta } from "@/app/api/storage/upload/route";
 import type {
   Claim, VerificationResult, Verdict,
   FoundSource, MissingSource, FindSourcesResult,
+  EvidenceResult, FindSourceForClaimResult,
 } from "@/lib/types";
 
 // ─── Design tokens ─────────────────────────────────────────────────────────────
@@ -51,37 +52,166 @@ function Badge({ config }: { config: typeof VERDICT_CONFIG[Verdict] }) {
   );
 }
 
+// ─── Evidence relevance colors (outside component for stability) ───────────────
+const RELEVANCE_COLORS = {
+  direct:     { bg: "#F0FDF4", border: "#BBF7D0", text: "#065F46" },
+  partial:    { bg: "#FFFBEB", border: "#FDE68A", text: "#78350F" },
+  tangential: { bg: "#F9FAFB", border: "#E5E7EB", text: "#374151" },
+};
+
 // ─── Claim Nav Card (left panel) ──────────────────────────────────────────────
 function ClaimNavCard({
   claim, index, isSelected, isHovered,
   onSelect, onHover, onHoverEnd, cardRef,
+  allSources,
 }: {
   claim: Claim; index: number;
   isSelected: boolean; isHovered: boolean;
   onSelect: () => void; onHover: () => void; onHoverEnd: () => void;
   cardRef: (el: HTMLDivElement | null) => void;
+  allSources: FoundSource[];
 }) {
   const cfg = VERDICT_CONFIG[claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
-  const [rewriting, setRewriting] = useState(false);
-  const [rewritten, setRewritten] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const showActions = ["NOT_SUPPORTED", "OVERSTATED", "PARTIAL", "WRONG_SOURCE"].includes(claim.verdict);
-  const showFindSource = claim.verdict === "UNVERIFIABLE";
-  const scholarUrl = `https://scholar.google.com/scholar?q=${encodeURIComponent(claim.claim)}`;
 
-  const handleRewrite = async (e: React.MouseEvent) => {
+  // Evidence state
+  const [evidence, setEvidence] = useState<EvidenceResult | null>(null);
+  const [loadingEvidence, setLoadingEvidence] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+
+  // Find source state
+  const [findingSource, setFindingSource] = useState(false);
+  const [sourceResult, setSourceResult] = useState<FindSourceForClaimResult | null>(null);
+
+  // Suggestion box: mutable text + inline toolbar
+  const [suggestionText, setSuggestionText] = useState(
+    claim.fix && claim.fix !== "none needed" ? claim.fix : ""
+  );
+  const [suggestionToolbar, setSuggestionToolbar] = useState<{ top: number; left: number } | null>(null);
+  const [suggestionInstruction, setSuggestionInstruction] = useState("");
+  const [rewritingSuggestion, setRewritingSuggestion] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Rewritten claim for NOT_SUPPORTED case
+  const [rewrittenClaim, setRewrittenClaim] = useState<string | null>(null);
+  const [rewritingClaim, setRewritingClaim] = useState(false);
+
+  const suggestionBoxRef = useRef<HTMLDivElement>(null);
+
+  // Verdict flags
+  const isSupported   = claim.verdict === "SUPPORTED";
+  const isPartial     = claim.verdict === "PARTIAL";
+  const isOverstated  = claim.verdict === "OVERSTATED";
+  const isNotSupported = claim.verdict === "NOT_SUPPORTED";
+  const isUnverifiable = claim.verdict === "UNVERIFIABLE";
+  const isWrongSource  = claim.verdict === "WRONG_SOURCE";
+  const hasIssues = isPartial || isOverstated || isWrongSource;
+
+  // Matched source text
+  const matchedSource = allSources.find(s => {
+    const key = s.citationKey.toLowerCase();
+    const cit = (claim.citation ?? "").toLowerCase();
+    return key === cit || cit.includes(key) || key.includes(cit.split(",")[0]);
+  });
+  const hasSourceText = !!(matchedSource?.text);
+
+  // Close suggestion toolbar on outside click
+  useEffect(() => {
+    if (!suggestionToolbar) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("[data-suggestion-toolbar]")) return;
+      setSuggestionToolbar(null);
+      setSuggestionInstruction("");
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [suggestionToolbar]);
+
+  // Show evidence
+  const handleShowEvidence = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setRewriting(true); setRewritten(null);
+    if (evidence) { setShowEvidence(v => !v); return; }
+    if (!hasSourceText) return;
+    setLoadingEvidence(true); setShowEvidence(true);
     try {
+      const res = await fetch("/api/extract-evidence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claim: claim.claim, sourceText: matchedSource!.text, sourceTitle: matchedSource!.title }),
+      });
+      setEvidence(await res.json());
+    } catch { setEvidence({ quotes: [], summary: "Failed to extract evidence.", confidence: "low" }); }
+    finally { setLoadingEvidence(false); }
+  };
+
+  // Find source
+  const handleFindSource = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (sourceResult) { setSourceResult(null); return; }
+    setFindingSource(true);
+    try {
+      const res = await fetch("/api/find-source-for-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claim: claim.claim, citation: claim.citation }),
+      });
+      setSourceResult(await res.json());
+    } catch { setSourceResult({ status: "not_found", message: "Search failed. Try again later." }); }
+    finally { setFindingSource(false); }
+  };
+
+  // Text selection in suggestion box → show inline toolbar
+  const handleSuggestionMouseUp = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.toString().trim().length < 2) {
+      setSuggestionToolbar(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    setSuggestionToolbar({ top: rect.bottom + 6, left: rect.left + rect.width / 2 });
+    setSuggestionInstruction("");
+  };
+
+  // Apply instruction to suggestion box text
+  const handleSuggestionRewrite = async () => {
+    if (!suggestionInstruction.trim()) return;
+    setRewritingSuggestion(true);
+    try {
+      const evidenceText = evidence?.quotes?.map(q => q.text).join("\n") ?? matchedSource?.text?.slice(0, 2000) ?? "";
       const res = await fetch("/api/rewrite-claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: claim.claim, citation: claim.citation, verdict: claim.verdict, why: claim.why }),
+        body: JSON.stringify({
+          claim: suggestionText,
+          citation: claim.citation,
+          verdict: claim.verdict,
+          why: claim.why,
+          evidence: evidenceText,
+          userInstruction: suggestionInstruction,
+        }),
       });
       const data = await res.json();
-      setRewritten(data.rewritten || "Could not generate a rewrite.");
-    } catch { setRewritten("Error generating rewrite."); }
-    finally { setRewriting(false); }
+      if (data.rewritten) setSuggestionText(data.rewritten);
+    } catch { /* silent */ }
+    finally { setRewritingSuggestion(false); setSuggestionToolbar(null); setSuggestionInstruction(""); }
+  };
+
+  // Rewrite not-supported claim from evidence
+  const handleRewriteFromEvidence = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRewritingClaim(true);
+    try {
+      const evidenceText = matchedSource?.text?.slice(0, 2000) ?? "";
+      const res = await fetch("/api/rewrite-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claim: claim.claim, citation: claim.citation, verdict: claim.verdict, why: claim.why, evidence: evidenceText }),
+      });
+      const data = await res.json();
+      if (data.rewritten) setRewrittenClaim(data.rewritten);
+    } catch { /* silent */ }
+    finally { setRewritingClaim(false); }
   };
 
   return (
@@ -117,79 +247,272 @@ function ClaimNavCard({
           style={{ borderColor: `${cfg.accent}33` }}
           onClick={e => e.stopPropagation()}
         >
-          <p className="text-[13px] text-[#3A3A38] leading-relaxed">{claim.why}</p>
+          {/* Why explanation — slightly stronger weight for readability */}
+          <p className="text-[13px] font-medium text-[#2A2A28] leading-relaxed">{claim.why}</p>
 
-          {claim.citation && claim.citation !== "No citation" && (
-            <div className="rounded-lg border px-3 py-2 bg-[#FAFAF9]" style={{ borderColor: "var(--border)" }}>
-              <p className="text-[9px] font-semibold text-[#9A9A98] uppercase tracking-wider mb-0.5">Source accessed</p>
-              <p className="text-[12px] font-medium text-[#1A1A18]">
-                {SOURCE_LABELS[claim.source_accessed ?? ""] ?? claim.source_accessed ?? "Unknown"}
-              </p>
-            </div>
+          {/* ── SUPPORTED: Show Evidence only ── */}
+          {isSupported && (
+            hasSourceText ? (
+              <button
+                onClick={handleShowEvidence}
+                disabled={loadingEvidence}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2.5 text-[11px] font-semibold text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+              >
+                {loadingEvidence
+                  ? <><Spinner size={10} /> Extracting…</>
+                  : showEvidence && evidence ? "Hide evidence" : "Show evidence"}
+              </button>
+            ) : (
+              <p className="text-[11px] text-[#9A9A98] italic">Source text not available for evidence display.</p>
+            )
           )}
 
-          {claim.fix && claim.fix !== "none needed" && !rewritten && (
-            <div className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2.5">
-              <p className="text-[9px] font-semibold text-[#1D4ED8] uppercase tracking-wider mb-1">Suggested fix</p>
-              <p className="text-[12px] text-[#1E3A5F] leading-relaxed">{claim.fix}</p>
-            </div>
-          )}
-
-          {rewritten && (
-            <div className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2.5 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[9px] font-semibold text-[#065F46] uppercase tracking-wider">Rewritten</p>
+          {/* ── PARTIAL / OVERSTATED / WRONG_SOURCE: Evidence + editable suggestion ── */}
+          {hasIssues && (
+            <>
+              {hasSourceText && (
                 <button
-                  onClick={() => { navigator.clipboard.writeText(rewritten); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
-                  className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
+                  onClick={handleShowEvidence}
+                  disabled={loadingEvidence}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
                 >
-                  {copied ? "Copied!" : "Copy"}
+                  {loadingEvidence
+                    ? <><Spinner size={10} /> Extracting…</>
+                    : showEvidence && evidence ? "Hide evidence" : "Show evidence"}
+                </button>
+              )}
+
+              {/* Editable suggestion box */}
+              {suggestionText && (
+                <>
+                  <div
+                    ref={suggestionBoxRef}
+                    className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2.5 relative"
+                    onMouseUp={handleSuggestionMouseUp}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[9px] font-semibold text-[#1D4ED8] uppercase tracking-wider">Suggested revision</p>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(suggestionText); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+                        className="text-[9px] text-[#93C5FD] hover:text-[#1D4ED8] transition-colors"
+                      >
+                        {copied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <p
+                      className="text-[12px] text-[#1E3A5F] leading-relaxed"
+                      style={{ cursor: "text", userSelect: "text" }}
+                    >
+                      {suggestionText}
+                    </p>
+                    <p className="text-[9px] text-[#93C5FD] mt-1.5 select-none">Select text to refine with an instruction</p>
+                  </div>
+
+                  {/* Inline suggestion toolbar */}
+                  {suggestionToolbar && (
+                    <div
+                      data-suggestion-toolbar="true"
+                      className="fixed z-50 rounded-xl border bg-white"
+                      style={{
+                        top: suggestionToolbar.top,
+                        left: suggestionToolbar.left,
+                        transform: "translateX(-50%)",
+                        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
+                        borderColor: "var(--border)",
+                        minWidth: 256,
+                        maxWidth: 340,
+                      }}
+                    >
+                      <div className="px-3 py-2.5 space-y-1.5">
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={suggestionInstruction}
+                            onChange={e => setSuggestionInstruction(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") handleSuggestionRewrite();
+                              if (e.key === "Escape") { setSuggestionToolbar(null); setSuggestionInstruction(""); }
+                            }}
+                            placeholder="e.g. less strong, more precise…"
+                            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
+                            style={{ borderColor: "var(--border)" }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={handleSuggestionRewrite}
+                            disabled={rewritingSuggestion || !suggestionInstruction.trim()}
+                            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
+                          >
+                            {rewritingSuggestion ? <Spinner size={10} color="white" /> : "Go"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* ── NOT SUPPORTED: Find better source + Rewrite from evidence ── */}
+          {isNotSupported && (
+            <div className="space-y-1.5">
+              <button
+                onClick={handleFindSource}
+                disabled={findingSource}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+              >
+                {findingSource ? <><Spinner size={10} /> Searching…</> : (
+                  <>
+                    <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" />
+                    </svg>
+                    Find better source
+                  </>
+                )}
+              </button>
+              {hasSourceText && !rewrittenClaim && (
+                <button
+                  onClick={handleRewriteFromEvidence}
+                  disabled={rewritingClaim}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+                >
+                  {rewritingClaim ? <><Spinner size={10} /> Rewriting…</> : "Rewrite based on evidence"}
+                </button>
+              )}
+              {rewrittenClaim && (
+                <div
+                  ref={suggestionBoxRef}
+                  className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2.5"
+                  onMouseUp={handleSuggestionMouseUp}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-[9px] font-semibold text-[#065F46] uppercase tracking-wider">Revised claim</p>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(rewrittenClaim); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+                      className="text-[9px] text-[#6EE7B7] hover:text-[#065F46] transition-colors"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-[#14532D] leading-relaxed" style={{ cursor: "text", userSelect: "text" }}>
+                    {rewrittenClaim}
+                  </p>
+                  {suggestionToolbar && (
+                    <div
+                      data-suggestion-toolbar="true"
+                      className="fixed z-50 rounded-xl border bg-white"
+                      style={{
+                        top: suggestionToolbar.top,
+                        left: suggestionToolbar.left,
+                        transform: "translateX(-50%)",
+                        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
+                        borderColor: "var(--border)",
+                        minWidth: 256,
+                        maxWidth: 340,
+                      }}
+                    >
+                      <div className="px-3 py-2.5 space-y-1.5">
+                        <div className="flex gap-1.5">
+                          <input
+                            type="text"
+                            value={suggestionInstruction}
+                            onChange={e => setSuggestionInstruction(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") handleSuggestionRewrite();
+                              if (e.key === "Escape") { setSuggestionToolbar(null); setSuggestionInstruction(""); }
+                            }}
+                            placeholder="e.g. less strong, more precise…"
+                            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
+                            style={{ borderColor: "var(--border)" }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={handleSuggestionRewrite}
+                            disabled={rewritingSuggestion || !suggestionInstruction.trim()}
+                            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
+                          >
+                            {rewritingSuggestion ? <Spinner size={10} color="white" /> : "Go"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── UNVERIFIABLE: Find source ── */}
+          {isUnverifiable && (
+            <button
+              onClick={handleFindSource}
+              disabled={findingSource}
+              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
+            >
+              {findingSource ? <><Spinner size={10} /> Searching…</> : (
+                <>
+                  <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" />
+                  </svg>
+                  Find source
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Source search result */}
+          {sourceResult && (
+            <div className={`rounded-lg border px-3 py-2.5 ${
+              sourceResult.status === "found_full_text" ? "bg-[#F0FDF4] border-[#BBF7D0]" :
+              sourceResult.status === "found_abstract" ? "bg-[#FFFBEB] border-[#FDE68A]" :
+              "bg-[#F9FAFB] border-[#E5E7EB]"
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider" style={{
+                  color: sourceResult.status === "found_full_text" ? "#065F46" :
+                         sourceResult.status === "found_abstract" ? "#78350F" : "#374151"
+                }}>
+                  {sourceResult.status === "found_full_text" ? "Full text found" :
+                   sourceResult.status === "found_abstract" ? "Abstract only" : "Not found"}
+                </span>
+                <button onClick={() => setSourceResult(null)} className="text-[9px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
+                  Dismiss
                 </button>
               </div>
-              <p className="text-[12px] text-[#14532D] leading-relaxed">{rewritten}</p>
-              <button onClick={() => setRewritten(null)} className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
-                Dismiss
-              </button>
+              {sourceResult.title && <p className="text-[11px] font-medium text-[#1A1A18] mb-0.5">{sourceResult.title}</p>}
+              <p className="text-[10px] text-[#5A5A58] leading-relaxed">{sourceResult.message}</p>
+              {sourceResult.status === "found_abstract" && (
+                <p className="text-[10px] text-[#B45309] mt-1 italic">Upload the full paper for confident verification.</p>
+              )}
             </div>
           )}
 
-          {showActions && !rewritten && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRewrite}
-                disabled={rewriting}
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
-              >
-                {rewriting ? <><Spinner size={10} /> Rewriting…</> : <>✏ Rewrite</>}
-              </button>
-              <a
-                href={scholarUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-1 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
-                onClick={e => e.stopPropagation()}
-              >
-                <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                Find source
-              </a>
+          {/* Evidence quotes */}
+          {showEvidence && evidence && (
+            <div className="space-y-2">
+              {evidence.quotes.length === 0 && (
+                <p className="text-[11px] text-[#9A9A98] italic px-0.5">No exact match found in source text.</p>
+              )}
+              {evidence.quotes.map((q, qi) => {
+                const rc = RELEVANCE_COLORS[q.relevance];
+                return (
+                  <div key={qi} className="rounded-lg border px-3 py-2.5" style={{ background: rc.bg, borderColor: rc.border }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: rc.text }}>
+                        {q.relevance}
+                      </span>
+                      {q.section && <span className="text-[9px] text-[#9A9A98]">· {q.section}</span>}
+                    </div>
+                    <p className="text-[11px] italic leading-relaxed" style={{ color: rc.text }}>&ldquo;{q.text}&rdquo;</p>
+                    {q.context && <p className="text-[10px] text-[#9A9A98] mt-1">{q.context}</p>}
+                  </div>
+                );
+              })}
+              {evidence.summary && (
+                <p className="text-[11px] text-[#5A5A58] leading-relaxed">{evidence.summary}</p>
+              )}
             </div>
-          )}
-
-          {showFindSource && (
-            <a
-              href={scholarUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
-              onClick={e => e.stopPropagation()}
-            >
-              <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              Find supporting source
-            </a>
           )}
         </div>
       )}
@@ -351,6 +674,96 @@ function ErrorBanner({ error }: { error: string }) {
 }
 
 // ─── Annotated text helpers ────────────────────────────────────────────────────
+// ─── Floating Selection Toolbar ───────────────────────────────────────────────
+function FloatingToolbar({
+  position,
+  selectedText,
+  claim,
+  allSources,
+  onRewritten,
+  onClose,
+}: {
+  position: { top: number; left: number };
+  selectedText: string;
+  claim: Claim | null;
+  allSources: FoundSource[];
+  onRewritten: (text: string) => void;
+  onClose: () => void;
+}) {
+  const [instruction, setInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSubmit = async () => {
+    if (!instruction.trim() || !claim) return;
+    setRewriting(true);
+    try {
+      const matchedSource = allSources.find(s => {
+        const key = s.citationKey.toLowerCase();
+        const cit = (claim.citation ?? "").toLowerCase();
+        return key === cit || cit.includes(key) || key.includes(cit.split(",")[0]);
+      });
+      const evidenceText = matchedSource?.text?.slice(0, 2000) ?? "";
+      const res = await fetch("/api/rewrite-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          claim: selectedText,
+          citation: claim.citation,
+          verdict: claim.verdict,
+          why: claim.why,
+          evidence: evidenceText,
+          userInstruction: instruction,
+        }),
+      });
+      const data = await res.json();
+      if (data.rewritten) onRewritten(data.rewritten);
+    } catch { /* ignore */ }
+    finally { setRewriting(false); }
+  };
+
+  return (
+    <div
+      className="fixed z-50 rounded-xl border bg-white"
+      style={{
+        top: position.top,
+        left: position.left,
+        transform: "translateX(-50%)",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",
+        borderColor: "var(--border)",
+        minWidth: 280,
+        maxWidth: 360,
+      }}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="px-3 py-2.5 space-y-2">
+        <p className="text-[9px] font-semibold text-[#9A9A98] uppercase tracking-wider">Edit selected text</p>
+        <div className="flex gap-1.5">
+          <input
+            ref={inputRef}
+            type="text"
+            value={instruction}
+            onChange={e => setInstruction(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleSubmit(); if (e.key === "Escape") onClose(); }}
+            placeholder='e.g. "make more precise", "add hedging"...'
+            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
+            style={{ borderColor: "var(--border)" }}
+          />
+          <button
+            onClick={handleSubmit}
+            disabled={rewriting || !instruction.trim()}
+            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
+          >
+            {rewriting ? <Spinner size={10} color="white" /> : "Go"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type TextSegment = { type: "text"; content: string } | { type: "claim"; content: string; claim: Claim };
 
 function buildTextSegments(text: string, claims: Claim[]): TextSegment[] {
@@ -828,6 +1241,14 @@ export default function Home() {
   const [selectedClaimIdx, setSelectedClaimIdx] = useState<number | null>(null);
   const [hoveredClaimIdx, setHoveredClaimIdx]   = useState<number | null>(null);
 
+  // Floating toolbar state
+  const [floatingToolbar, setFloatingToolbar] = useState<{
+    position: { top: number; left: number };
+    selectedText: string;
+    claim: Claim | null;
+  } | null>(null);
+  const [floatingRewriteResult, setFloatingRewriteResult] = useState<string | null>(null);
+
   // Sources screen UX
   const [openMenuKey, setOpenMenuKey]   = useState<string | null>(null);
   const [editingSource, setEditingSource] = useState<FoundSource | null>(null);
@@ -883,6 +1304,18 @@ export default function Home() {
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
   }, [openMenuKey]);
+
+  // Close floating toolbar on outside click
+  useEffect(() => {
+    if (!floatingToolbar) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest(".fixed.z-50")) return; // clicking inside toolbar
+      setFloatingToolbar(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [floatingToolbar]);
 
   // ── handleFindSources ───────────────────────────────────────────────────────
   const handleFindSources = async () => {
@@ -1597,6 +2030,7 @@ export default function Home() {
                         onHover={() => setHoveredClaimIdx(globalIdx)}
                         onHoverEnd={() => setHoveredClaimIdx(null)}
                         cardRef={el => { claimCardRefs.current[globalIdx] = el; }}
+                        allSources={[...foundSources, ...uploadedSources]}
                       />
                     );
                   })
@@ -1617,7 +2051,79 @@ export default function Home() {
               ref={rightPanelRef}
               className="flex-1 overflow-y-auto panel-scroll"
               style={{ padding: "28px 40px 40px" }}
+              onMouseUp={() => {
+                // Detect text selection for floating toolbar
+                const sel = window.getSelection();
+                if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+                  // Don't close toolbar if user clicks inside it
+                  return;
+                }
+                const text = sel.toString().trim();
+                if (text.length < 5) return;
+
+                // Find which claim this selection belongs to
+                const range = sel.getRangeAt(0);
+                const markEl = range.startContainer.parentElement?.closest("mark");
+                if (!markEl) return;
+
+                // Find the claim from mark refs
+                let matchedClaim: Claim | null = null;
+                for (const [idx, el] of Object.entries(claimMarkRefs.current)) {
+                  if (el === markEl) {
+                    matchedClaim = result.claims[parseInt(idx)];
+                    break;
+                  }
+                }
+                if (!matchedClaim) return;
+
+                const rect = range.getBoundingClientRect();
+                setFloatingToolbar({
+                  position: { top: rect.bottom + 8, left: rect.left + rect.width / 2 },
+                  selectedText: text,
+                  claim: matchedClaim,
+                });
+                setFloatingRewriteResult(null);
+              }}
             >
+              {/* Floating toolbar */}
+              {floatingToolbar && (
+                <FloatingToolbar
+                  position={floatingToolbar.position}
+                  selectedText={floatingToolbar.selectedText}
+                  claim={floatingToolbar.claim}
+                  allSources={[...foundSources, ...uploadedSources]}
+                  onRewritten={(text) => {
+                    setFloatingRewriteResult(text);
+                    setFloatingToolbar(null);
+                  }}
+                  onClose={() => { setFloatingToolbar(null); setFloatingRewriteResult(null); }}
+                />
+              )}
+
+              {/* Inline rewrite result banner */}
+              {floatingRewriteResult && (
+                <div className="mb-4 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] px-4 py-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-semibold text-[#065F46] uppercase tracking-wider">Suggested rewrite</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(floatingRewriteResult); }}
+                        className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        onClick={() => setFloatingRewriteResult(null)}
+                        className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[13px] text-[#14532D] leading-relaxed">{floatingRewriteResult}</p>
+                </div>
+              )}
+
               {/* Annotated text */}
               <div className="card p-8 cursor-default">
                 <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">

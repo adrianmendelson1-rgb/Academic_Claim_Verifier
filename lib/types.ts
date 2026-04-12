@@ -90,3 +90,31 @@ export interface FindSourcesResult {
   /** Papers needing manual upload: both "abstract only" and "not found" */
   missing: MissingSource[];
 }
+
+// ── Evidence extraction types ───────────────────────────────────────────────
+
+export interface EvidenceQuote {
+  text: string;
+  context?: string;
+  section?: string;
+  relevance: "direct" | "partial" | "tangential";
+}
+
+export interface EvidenceResult {
+  quotes: EvidenceQuote[];
+  summary: string;
+  confidence: "high" | "medium" | "low";
+}
+
+// ── Per-claim source search result ──────────────────────────────────────────
+
+export interface FindSourceForClaimResult {
+  status: "found_full_text" | "found_abstract" | "not_found";
+  title?: string;
+  year?: number;
+  url?: string;
+  source?: string;
+  text?: string;
+  abstract?: string;
+  message: string;
+}
