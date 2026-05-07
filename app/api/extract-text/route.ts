@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const text = truncate(result.text, 2000);
+    // The user's manuscript needs to keep its full text — we have to find the
+    // references section, which often sits at the very end of a long file.
+    // Cap at 80k words so a pathological 500-page upload can't blow up the
+    // browser, but anything realistic (a thesis, a long review) survives intact.
+    const text = truncate(result.text, 80_000);
     const wc = wordCount(text);
 
     return NextResponse.json({ text, wordCount: wc, name });

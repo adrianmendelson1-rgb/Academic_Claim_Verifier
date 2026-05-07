@@ -1,32 +1,56 @@
 export type Verdict = "SUPPORTED" | "PARTIAL" | "OVERSTATED" | "NOT_SUPPORTED" | "UNVERIFIABLE" | "WRONG_SOURCE";
 
-/** Per-component match result used in the analysis breakdown. */
+/** Per-component match result used in the analysis breakdown.
+ *  For the `construct` component, "exact" = same construct, "weaker" = related
+ *  but theoretically narrower/broader, "absent" = source doesn't address this
+ *  construct, "contradicted" = source studies a theoretically distinct construct. */
 export interface ComponentMatch {
-  component: string;          // e.g. "population", "direction", "strength qualifier"
+  component: string;          // e.g. "construct", "population", "direction", "strength qualifier"
   claim_value: string;        // what the claim states
   source_value: string;       // what the source actually says (or "not mentioned")
   match: "exact" | "weaker" | "absent" | "contradicted";
 }
+
+/** A specific failure mode — surfaced when the verdict is anything other than
+ *  SUPPORTED, to let the rewrite system pick a meaning-preserving strategy
+ *  rather than blindly applying verdict-driven hedging. */
+export type FailureMode =
+  | "construct_mismatch"        // source studies a theoretically different system/intervention
+  | "scope_broadening"          // claim generalizes beyond what the source's population/setting supports
+  | "weaker_evidence"           // source supports the claim but is more cautious than the claim's wording
+  | "abstract_insufficient"     // claim relies on details typically only in full text
+  | "subtle_causation"          // claim implies causation that the source's design can't establish
+  | "compound_partial"          // multi-part claim is partly supported, partly not
+  | "citation_problem"          // the claim itself is fine; the cited source is the wrong one
+  | null;
 
 /** Structured reasoning that powers the verdict — lives alongside the
  *  existing UI-facing fields so the frontend can progressively adopt it. */
 export interface ClaimAnalysis {
   /** Decomposed claim components (Step 1) */
   components: {
+    /** The specific system, intervention, or phenomenon the claim is about
+     *  (e.g. "general-purpose LLM use for emotional support",
+     *  "rule-based therapy chatbot", "human-delivered CBT"). */
+    construct?: string;
     population?: string;
     relationship_type?: string;   // "association" | "causation" | "description" | etc.
     direction?: string;           // "increase" | "decrease" | "difference" | "none"
     strength_qualifier?: string;  // "significantly" | "strongly" | "suggests" | etc.
     outcome?: string;
   };
-  /** Per-component matching table (Step 3) */
+  /** Per-component matching table (Step 3) — includes a `construct` row */
   component_table: ComponentMatch[];
-  /** Strength-calibration flags (Step 4) — empty array if none triggered */
+  /** Strength-calibration signals (Step 4) — empty array if none observed.
+   *  These INFORM the verdict; they no longer auto-downgrade it. */
   strength_flags: string[];
   /** What category of fix is needed */
   fix_type: "none" | "hedge" | "narrow_scope" | "weaken_direction" | "replace_source" | "rewrite";
   /** Which source material the verdict was based on */
   source_used: "full_text" | "abstract" | "web_search" | "none";
+  /** Lightweight diagnostic that disambiguates non-SUPPORTED verdicts and
+   *  drives meaning-preserving rewrite strategies. Null when SUPPORTED. */
+  failure_mode?: FailureMode;
 }
 
 export interface Claim {
