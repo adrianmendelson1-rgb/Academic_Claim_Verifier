@@ -47,8 +47,10 @@ Rules:
   const MAX_RETRIES = 3;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
+      // Citation extraction is mechanical text parsing — Haiku 4.5 is more
+      // than sufficient and shaves ~5–10s off the Sources phase.
       response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 4000,
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],

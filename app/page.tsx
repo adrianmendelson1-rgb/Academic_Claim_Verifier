@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useTransition } from "react";
 import type { StoredFileMeta } from "@/app/api/storage/upload/route";
 import type {
-  Claim, VerificationResult, Verdict,
+  Claim, VerificationResult, Verdict, FailureMode,
   FoundSource, MissingSource, FindSourcesResult,
   EvidenceResult, FindSourceForClaimResult,
 } from "@/lib/types";
@@ -31,6 +31,24 @@ const SOURCE_LABELS: Record<string, string> = {
   core: "CORE",
   uploaded: "Uploaded",
 };
+
+// Compact human-readable labels for the failure_mode field — surfaced as a
+// small chip in the claim card so PARTIAL etc. stop being a catch-all.
+const FAILURE_MODE_LABELS: Record<NonNullable<FailureMode>, string> = {
+  construct_mismatch:    "construct mismatch",
+  scope_broadening:      "scope broadening",
+  weaker_evidence:       "weaker evidence",
+  abstract_insufficient: "abstract insufficient",
+  subtle_causation:      "subtle causation",
+  compound_partial:      "compound partial",
+  citation_problem:      "citation problem",
+};
+
+function failureModeLabel(claim: Claim): string | null {
+  const fm = claim.analysis?.failure_mode;
+  if (!fm) return null;
+  return FAILURE_MODE_LABELS[fm] ?? null;
+}
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 function Spinner({ size = 16, color = "currentColor" }: { size?: number; color?: string }) {
@@ -61,73 +79,30 @@ const RELEVANCE_COLORS = {
 
 // ─── Claim Nav Card (left panel) ──────────────────────────────────────────────
 function ClaimNavCard({
-  claim, index, isSelected, isHovered,
+  claim, index, isSelected, isHovered, hasPendingChange,
   onSelect, onHover, onHoverEnd, cardRef,
   allSources,
+  onOpenRewrite,
 }: {
   claim: Claim; index: number;
   isSelected: boolean; isHovered: boolean;
+  hasPendingChange: boolean;
   onSelect: () => void; onHover: () => void; onHoverEnd: () => void;
   cardRef: (el: HTMLDivElement | null) => void;
   allSources: FoundSource[];
+  onOpenRewrite: () => void;
 }) {
   const cfg = VERDICT_CONFIG[claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
 
-  // Evidence state
+  // Evidence state (kept locally — it's a peek-into-source affordance,
+  // not an editing affordance, so it doesn't belong in the rewrite popup)
   const [evidence, setEvidence] = useState<EvidenceResult | null>(null);
   const [loadingEvidence, setLoadingEvidence] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
-  // Find source state
-  const [findingSource, setFindingSource] = useState(false);
-  const [sourceResult, setSourceResult] = useState<FindSourceForClaimResult | null>(null);
-
-  // Suggestion box: mutable text + inline toolbar
-  const [suggestionText, setSuggestionText] = useState(
-    claim.fix && claim.fix !== "none needed" ? claim.fix : ""
-  );
-  const [suggestionToolbar, setSuggestionToolbar] = useState<{ top: number; left: number } | null>(null);
-  const [suggestionInstruction, setSuggestionInstruction] = useState("");
-  const [rewritingSuggestion, setRewritingSuggestion] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  // Rewritten claim for NOT_SUPPORTED case
-  const [rewrittenClaim, setRewrittenClaim] = useState<string | null>(null);
-  const [rewritingClaim, setRewritingClaim] = useState(false);
-
-  const suggestionBoxRef = useRef<HTMLDivElement>(null);
-
-  // Verdict flags
-  const isSupported   = claim.verdict === "SUPPORTED";
-  const isPartial     = claim.verdict === "PARTIAL";
-  const isOverstated  = claim.verdict === "OVERSTATED";
-  const isNotSupported = claim.verdict === "NOT_SUPPORTED";
-  const isUnverifiable = claim.verdict === "UNVERIFIABLE";
-  const isWrongSource  = claim.verdict === "WRONG_SOURCE";
-  const hasIssues = isPartial || isOverstated || isWrongSource;
-
-  // Matched source text
-  const matchedSource = allSources.find(s => {
-    const key = s.citationKey.toLowerCase();
-    const cit = (claim.citation ?? "").toLowerCase();
-    return key === cit || cit.includes(key) || key.includes(cit.split(",")[0]);
-  });
+  const matchedSource = findMatchedSource(allSources, claim.citation);
   const hasSourceText = !!(matchedSource?.text);
 
-  // Close suggestion toolbar on outside click
-  useEffect(() => {
-    if (!suggestionToolbar) return;
-    const close = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("[data-suggestion-toolbar]")) return;
-      setSuggestionToolbar(null);
-      setSuggestionInstruction("");
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [suggestionToolbar]);
-
-  // Show evidence
   const handleShowEvidence = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (evidence) { setShowEvidence(v => !v); return; }
@@ -142,76 +117,6 @@ function ClaimNavCard({
       setEvidence(await res.json());
     } catch { setEvidence({ quotes: [], summary: "Failed to extract evidence.", confidence: "low" }); }
     finally { setLoadingEvidence(false); }
-  };
-
-  // Find source
-  const handleFindSource = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (sourceResult) { setSourceResult(null); return; }
-    setFindingSource(true);
-    try {
-      const res = await fetch("/api/find-source-for-claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: claim.claim, citation: claim.citation }),
-      });
-      setSourceResult(await res.json());
-    } catch { setSourceResult({ status: "not_found", message: "Search failed. Try again later." }); }
-    finally { setFindingSource(false); }
-  };
-
-  // Text selection in suggestion box → show inline toolbar
-  const handleSuggestionMouseUp = () => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.toString().trim().length < 2) {
-      setSuggestionToolbar(null);
-      return;
-    }
-    const range = sel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    setSuggestionToolbar({ top: rect.bottom + 6, left: rect.left + rect.width / 2 });
-    setSuggestionInstruction("");
-  };
-
-  // Apply instruction to suggestion box text
-  const handleSuggestionRewrite = async () => {
-    if (!suggestionInstruction.trim()) return;
-    setRewritingSuggestion(true);
-    try {
-      const evidenceText = evidence?.quotes?.map(q => q.text).join("\n") ?? matchedSource?.text?.slice(0, 2000) ?? "";
-      const res = await fetch("/api/rewrite-claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          claim: suggestionText,
-          citation: claim.citation,
-          verdict: claim.verdict,
-          why: claim.why,
-          evidence: evidenceText,
-          userInstruction: suggestionInstruction,
-        }),
-      });
-      const data = await res.json();
-      if (data.rewritten) setSuggestionText(data.rewritten);
-    } catch { /* silent */ }
-    finally { setRewritingSuggestion(false); setSuggestionToolbar(null); setSuggestionInstruction(""); }
-  };
-
-  // Rewrite not-supported claim from evidence
-  const handleRewriteFromEvidence = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRewritingClaim(true);
-    try {
-      const evidenceText = matchedSource?.text?.slice(0, 2000) ?? "";
-      const res = await fetch("/api/rewrite-claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claim: claim.claim, citation: claim.citation, verdict: claim.verdict, why: claim.why, evidence: evidenceText }),
-      });
-      const data = await res.json();
-      if (data.rewritten) setRewrittenClaim(data.rewritten);
-    } catch { /* silent */ }
-    finally { setRewritingClaim(false); }
   };
 
   return (
@@ -231,8 +136,34 @@ function ClaimNavCard({
       {/* Compact summary — always visible */}
       <div className="px-4 py-3 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Badge config={cfg} />
-          <span className="text-[10px] text-[#C8C8C6] font-mono flex-shrink-0">#{index + 1}</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Badge config={cfg} />
+            {(() => {
+              const fmLabel = failureModeLabel(claim);
+              if (!fmLabel) return null;
+              return (
+                <span
+                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium tracking-wide whitespace-nowrap"
+                  style={{ background: "#FAFAF8", color: "#5A5A58", border: "1px solid var(--border)" }}
+                  title="Why this verdict"
+                >
+                  {fmLabel}
+                </span>
+              );
+            })()}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {hasPendingChange && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold"
+                style={{ background: "#ECFDF5", color: "#047857", border: "1px solid #BBF7D0" }}
+                title="Revision applied"
+              >
+                ⟲ revised
+              </span>
+            )}
+            <span className="text-[10px] text-[#C8C8C6] font-mono flex-shrink-0">#{index + 1}</span>
+          </div>
         </div>
         <p className={`text-[12px] text-[#2A2A28] italic leading-snug ${isSelected ? "" : "line-clamp-2"}`}>
           &ldquo;{claim.claim}&rdquo;
@@ -247,245 +178,35 @@ function ClaimNavCard({
           style={{ borderColor: `${cfg.accent}33` }}
           onClick={e => e.stopPropagation()}
         >
-          {/* Why explanation — slightly stronger weight for readability */}
+          {/* Why explanation */}
           <p className="text-[13px] font-medium text-[#2A2A28] leading-relaxed">{claim.why}</p>
 
-          {/* ── SUPPORTED: Show Evidence only ── */}
-          {isSupported && (
-            hasSourceText ? (
-              <button
-                onClick={handleShowEvidence}
-                disabled={loadingEvidence}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2.5 text-[11px] font-semibold text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
-              >
-                {loadingEvidence
-                  ? <><Spinner size={10} /> Extracting…</>
-                  : showEvidence && evidence ? "Hide evidence" : "Show evidence"}
-              </button>
-            ) : (
-              <p className="text-[11px] text-[#9A9A98] italic">Source text not available for evidence display.</p>
-            )
-          )}
+          {/* Unified primary action: Suggest rewrite */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onOpenRewrite(); }}
+            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-[11.5px] font-semibold text-white transition-all"
+            style={{ background: "#1A1A18" }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = "0.88")}
+            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            {hasPendingChange ? "Revise again" : "Suggest rewrite"}
+          </button>
 
-          {/* ── PARTIAL / OVERSTATED / WRONG_SOURCE: Evidence + editable suggestion ── */}
-          {hasIssues && (
-            <>
-              {hasSourceText && (
-                <button
-                  onClick={handleShowEvidence}
-                  disabled={loadingEvidence}
-                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
-                >
-                  {loadingEvidence
-                    ? <><Spinner size={10} /> Extracting…</>
-                    : showEvidence && evidence ? "Hide evidence" : "Show evidence"}
-                </button>
-              )}
-
-              {/* Editable suggestion box */}
-              {suggestionText && (
-                <>
-                  <div
-                    ref={suggestionBoxRef}
-                    className="rounded-lg bg-[#F0F7FF] border border-[#BFDBFE] px-3 py-2.5 relative"
-                    onMouseUp={handleSuggestionMouseUp}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <p className="text-[9px] font-semibold text-[#1D4ED8] uppercase tracking-wider">Suggested revision</p>
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(suggestionText); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-                        className="text-[9px] text-[#93C5FD] hover:text-[#1D4ED8] transition-colors"
-                      >
-                        {copied ? "Copied" : "Copy"}
-                      </button>
-                    </div>
-                    <p
-                      className="text-[12px] text-[#1E3A5F] leading-relaxed"
-                      style={{ cursor: "text", userSelect: "text" }}
-                    >
-                      {suggestionText}
-                    </p>
-                    <p className="text-[9px] text-[#93C5FD] mt-1.5 select-none">Select text to refine with an instruction</p>
-                  </div>
-
-                  {/* Inline suggestion toolbar */}
-                  {suggestionToolbar && (
-                    <div
-                      data-suggestion-toolbar="true"
-                      className="fixed z-50 rounded-xl border bg-white"
-                      style={{
-                        top: suggestionToolbar.top,
-                        left: suggestionToolbar.left,
-                        transform: "translateX(-50%)",
-                        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
-                        borderColor: "var(--border)",
-                        minWidth: 256,
-                        maxWidth: 340,
-                      }}
-                    >
-                      <div className="px-3 py-2.5 space-y-1.5">
-                        <div className="flex gap-1.5">
-                          <input
-                            type="text"
-                            value={suggestionInstruction}
-                            onChange={e => setSuggestionInstruction(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") handleSuggestionRewrite();
-                              if (e.key === "Escape") { setSuggestionToolbar(null); setSuggestionInstruction(""); }
-                            }}
-                            placeholder="e.g. less strong, more precise…"
-                            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
-                            style={{ borderColor: "var(--border)" }}
-                            autoFocus
-                          />
-                          <button
-                            onClick={handleSuggestionRewrite}
-                            disabled={rewritingSuggestion || !suggestionInstruction.trim()}
-                            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
-                          >
-                            {rewritingSuggestion ? <Spinner size={10} color="white" /> : "Go"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── NOT SUPPORTED: Find better source + Rewrite from evidence ── */}
-          {isNotSupported && (
-            <div className="space-y-1.5">
-              <button
-                onClick={handleFindSource}
-                disabled={findingSource}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
-              >
-                {findingSource ? <><Spinner size={10} /> Searching…</> : (
-                  <>
-                    <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" />
-                    </svg>
-                    Find better source
-                  </>
-                )}
-              </button>
-              {hasSourceText && !rewrittenClaim && (
-                <button
-                  onClick={handleRewriteFromEvidence}
-                  disabled={rewritingClaim}
-                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
-                >
-                  {rewritingClaim ? <><Spinner size={10} /> Rewriting…</> : "Rewrite based on evidence"}
-                </button>
-              )}
-              {rewrittenClaim && (
-                <div
-                  ref={suggestionBoxRef}
-                  className="rounded-lg bg-[#F0FDF4] border border-[#BBF7D0] px-3 py-2.5"
-                  onMouseUp={handleSuggestionMouseUp}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <p className="text-[9px] font-semibold text-[#065F46] uppercase tracking-wider">Revised claim</p>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(rewrittenClaim); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-                      className="text-[9px] text-[#6EE7B7] hover:text-[#065F46] transition-colors"
-                    >
-                      {copied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <p className="text-[12px] text-[#14532D] leading-relaxed" style={{ cursor: "text", userSelect: "text" }}>
-                    {rewrittenClaim}
-                  </p>
-                  {suggestionToolbar && (
-                    <div
-                      data-suggestion-toolbar="true"
-                      className="fixed z-50 rounded-xl border bg-white"
-                      style={{
-                        top: suggestionToolbar.top,
-                        left: suggestionToolbar.left,
-                        transform: "translateX(-50%)",
-                        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
-                        borderColor: "var(--border)",
-                        minWidth: 256,
-                        maxWidth: 340,
-                      }}
-                    >
-                      <div className="px-3 py-2.5 space-y-1.5">
-                        <div className="flex gap-1.5">
-                          <input
-                            type="text"
-                            value={suggestionInstruction}
-                            onChange={e => setSuggestionInstruction(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") handleSuggestionRewrite();
-                              if (e.key === "Escape") { setSuggestionToolbar(null); setSuggestionInstruction(""); }
-                            }}
-                            placeholder="e.g. less strong, more precise…"
-                            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
-                            style={{ borderColor: "var(--border)" }}
-                            autoFocus
-                          />
-                          <button
-                            onClick={handleSuggestionRewrite}
-                            disabled={rewritingSuggestion || !suggestionInstruction.trim()}
-                            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
-                          >
-                            {rewritingSuggestion ? <Spinner size={10} color="white" /> : "Go"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── UNVERIFIABLE: Find source ── */}
-          {isUnverifiable && (
+          {/* Evidence button — context-agnostic peek into source */}
+          {hasSourceText && (
             <button
-              onClick={handleFindSource}
-              disabled={findingSource}
+              onClick={handleShowEvidence}
+              disabled={loadingEvidence}
               className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-[#EBEBEA] bg-white px-2 py-2 text-[11px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all disabled:opacity-50"
             >
-              {findingSource ? <><Spinner size={10} /> Searching…</> : (
-                <>
-                  <svg className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z" />
-                  </svg>
-                  Find source
-                </>
-              )}
+              {loadingEvidence
+                ? <><Spinner size={10} /> Extracting…</>
+                : showEvidence && evidence ? "Hide evidence" : "Show evidence"}
             </button>
-          )}
-
-          {/* Source search result */}
-          {sourceResult && (
-            <div className={`rounded-lg border px-3 py-2.5 ${
-              sourceResult.status === "found_full_text" ? "bg-[#F0FDF4] border-[#BBF7D0]" :
-              sourceResult.status === "found_abstract" ? "bg-[#FFFBEB] border-[#FDE68A]" :
-              "bg-[#F9FAFB] border-[#E5E7EB]"
-            }`}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] font-semibold uppercase tracking-wider" style={{
-                  color: sourceResult.status === "found_full_text" ? "#065F46" :
-                         sourceResult.status === "found_abstract" ? "#78350F" : "#374151"
-                }}>
-                  {sourceResult.status === "found_full_text" ? "Full text found" :
-                   sourceResult.status === "found_abstract" ? "Abstract only" : "Not found"}
-                </span>
-                <button onClick={() => setSourceResult(null)} className="text-[9px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors">
-                  Dismiss
-                </button>
-              </div>
-              {sourceResult.title && <p className="text-[11px] font-medium text-[#1A1A18] mb-0.5">{sourceResult.title}</p>}
-              <p className="text-[10px] text-[#5A5A58] leading-relaxed">{sourceResult.message}</p>
-              {sourceResult.status === "found_abstract" && (
-                <p className="text-[10px] text-[#B45309] mt-1 italic">Upload the full paper for confident verification.</p>
-              )}
-            </div>
           )}
 
           {/* Evidence quotes */}
@@ -673,91 +394,362 @@ function ErrorBanner({ error }: { error: string }) {
   );
 }
 
-// ─── Annotated text helpers ────────────────────────────────────────────────────
-// ─── Floating Selection Toolbar ───────────────────────────────────────────────
-function FloatingToolbar({
-  position,
-  selectedText,
+// ─── Source matching helper ───────────────────────────────────────────────────
+function findMatchedSource(allSources: FoundSource[], citation: string): FoundSource | undefined {
+  const cit = (citation ?? "").toLowerCase();
+  return allSources.find(s => {
+    const key = s.citationKey.toLowerCase();
+    return key === cit || cit.includes(key) || key.includes(cit.split(",")[0]);
+  });
+}
+
+// ─── Unified Rewrite Popup (modal) ────────────────────────────────────────────
+function RewritePopup({
   claim,
+  currentText,
   allSources,
-  onRewritten,
+  replacedSource,
+  onAccept,
+  onReplaceSource,
   onClose,
 }: {
-  position: { top: number; left: number };
-  selectedText: string;
-  claim: Claim | null;
+  claim: Claim;
+  currentText: string;
   allSources: FoundSource[];
-  onRewritten: (text: string) => void;
+  replacedSource?: FoundSource;
+  onAccept: (text: string) => void;
+  onReplaceSource: (s: FoundSource) => void;
   onClose: () => void;
 }) {
+  const cfg = VERDICT_CONFIG[claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
+  const failureMode = claim.analysis?.failure_mode ?? null;
+
+  const [suggestion, setSuggestion] = useState("");
+  const [generating, setGenerating] = useState(false);
   const [instruction, setInstruction] = useState("");
-  const [rewriting, setRewriting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [findingSource, setFindingSource] = useState(false);
+  const [foundSource, setFoundSource] = useState<FindSourceForClaimResult | null>(null);
+  /** When the API decides this is a citation issue (not a wording issue), it
+   *  returns a citationIssue payload instead of a rewritten sentence. We show
+   *  that as a short notice rather than producing a misleading auto-rewrite. */
+  const [citationIssue, setCitationIssue] = useState<{ message: string; suggestion: string } | null>(null);
+  const initialFetchedRef = useRef(false);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  const matched = replacedSource ?? findMatchedSource(allSources, claim.citation);
+  const evidence = matched?.text?.slice(0, 2000) ?? "";
 
-  const handleSubmit = async () => {
-    if (!instruction.trim() || !claim) return;
-    setRewriting(true);
+  // Show the find-source section when (a) the verdict implies the source
+  // itself is suspect/missing, OR (b) the failure_mode says the problem is
+  // primarily the citation. Either signal opens the find-source flow.
+  const showFindSource =
+    ["WRONG_SOURCE", "NOT_SUPPORTED", "UNVERIFIABLE"].includes(claim.verdict) ||
+    failureMode === "citation_problem" ||
+    failureMode === "construct_mismatch";
+
+  const generate = useCallback(async (userInstruction = "") => {
+    setGenerating(true);
+    setCitationIssue(null);
     try {
-      const matchedSource = allSources.find(s => {
-        const key = s.citationKey.toLowerCase();
-        const cit = (claim.citation ?? "").toLowerCase();
-        return key === cit || cit.includes(key) || key.includes(cit.split(",")[0]);
-      });
-      const evidenceText = matchedSource?.text?.slice(0, 2000) ?? "";
       const res = await fetch("/api/rewrite-claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          claim: selectedText,
+          claim: currentText,
           citation: claim.citation,
           verdict: claim.verdict,
           why: claim.why,
-          evidence: evidenceText,
-          userInstruction: instruction,
+          evidence,
+          userInstruction,
+          failureMode,
         }),
       });
       const data = await res.json();
-      if (data.rewritten) onRewritten(data.rewritten);
-    } catch { /* ignore */ }
-    finally { setRewriting(false); }
+      if (data.citationIssue) {
+        setCitationIssue(data.citationIssue);
+        setSuggestion("");
+      } else if (data.rewritten) {
+        setSuggestion(data.rewritten);
+      }
+    } catch { /* silent */ }
+    finally { setGenerating(false); }
+  }, [currentText, claim.citation, claim.verdict, claim.why, evidence, failureMode]);
+
+  // Auto-generate first suggestion on open
+  useEffect(() => {
+    if (initialFetchedRef.current) return;
+    initialFetchedRef.current = true;
+    generate();
+  }, [generate]);
+
+  // Close on escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handleFindSource = async () => {
+    setFindingSource(true);
+    try {
+      const res = await fetch("/api/find-source-for-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claim: claim.claim, citation: claim.citation }),
+      });
+      setFoundSource(await res.json());
+    } catch {
+      setFoundSource({ status: "not_found", message: "Search failed. Try again later." });
+    } finally { setFindingSource(false); }
+  };
+
+  const handleUseFoundSource = () => {
+    if (!foundSource) return;
+    const text = foundSource.text || foundSource.abstract;
+    if (!text) return;
+    const newSource: FoundSource = {
+      citationKey: claim.citation,
+      title: foundSource.title || "Found source",
+      year: foundSource.year,
+      accessLevel: foundSource.text ? "Full text" : "Abstract only",
+      text,
+      url: foundSource.url,
+      source: (foundSource.source as FoundSource["source"]) || "semantic_scholar",
+    };
+    onReplaceSource(newSource);
+    setFoundSource(null);
+    // Regenerate the suggestion using the new evidence
+    setTimeout(() => generate(), 0);
   };
 
   return (
     <div
-      className="fixed z-50 rounded-xl border bg-white"
-      style={{
-        top: position.top,
-        left: position.left,
-        transform: "translateX(-50%)",
-        boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",
-        borderColor: "var(--border)",
-        minWidth: 280,
-        maxWidth: 360,
-      }}
-      onClick={e => e.stopPropagation()}
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 fade-in"
+      style={{ background: "rgba(20,20,18,0.32)", backdropFilter: "blur(2px)" }}
+      onClick={onClose}
     >
-      <div className="px-3 py-2.5 space-y-2">
-        <p className="text-[9px] font-semibold text-[#9A9A98] uppercase tracking-wider">Edit selected text</p>
-        <div className="flex gap-1.5">
-          <input
-            ref={inputRef}
-            type="text"
-            value={instruction}
-            onChange={e => setInstruction(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") handleSubmit(); if (e.key === "Escape") onClose(); }}
-            placeholder='e.g. "make more precise", "add hedging"...'
-            className="flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] text-[#1A1A18] outline-none"
-            style={{ borderColor: "var(--border)" }}
-          />
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[640px] max-h-[88vh] overflow-y-auto panel-scroll"
+        style={{ border: `1px solid ${cfg.accent}33` }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          className="sticky top-0 px-6 py-4 border-b flex items-center justify-between bg-white z-10"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <div className="flex items-center gap-3">
+            <Badge config={cfg} />
+            <h3 className="text-[15px] font-semibold text-[#1A1A18]">Suggest rewrite</h3>
+          </div>
           <button
-            onClick={handleSubmit}
-            disabled={rewriting || !instruction.trim()}
-            className="rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[10px] font-medium text-white hover:opacity-90 transition-all disabled:opacity-40"
+            onClick={onClose}
+            className="text-[#BBBBB9] hover:text-[#5A5A58] text-[24px] leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#F7F7F5] transition-all"
+            aria-label="Close"
           >
-            {rewriting ? <Spinner size={10} color="white" /> : "Go"}
+            ×
           </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5">
+          {/* Why */}
+          {claim.why && (
+            <p className="text-[13px] text-[#5A5A58] leading-relaxed">{claim.why}</p>
+          )}
+
+          {/* Original */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Original sentence</p>
+            <div
+              className="rounded-xl px-4 py-3 text-[13px] text-[#3A3A38] leading-relaxed italic"
+              style={{ background: "#F7F7F5", border: "1px solid var(--border)" }}
+            >
+              &ldquo;{currentText}&rdquo;
+            </div>
+          </div>
+
+          {/* Suggestion */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: cfg.accent }}>
+                Suggested revision
+              </p>
+              <button
+                onClick={() => generate(instruction)}
+                disabled={generating}
+                className="inline-flex items-center gap-1 text-[10px] font-medium text-[#5A5A58] hover:text-[#1A1A18] transition-colors disabled:opacity-40"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                Regenerate
+              </button>
+            </div>
+            <div
+              className="rounded-xl px-4 py-3 min-h-[88px]"
+              style={{ background: cfg.badgeBg, border: `1.5px solid ${cfg.accent}55` }}
+            >
+              {generating ? (
+                <div className="flex items-center gap-2 text-[12px] text-[#5A5A58]">
+                  <Spinner size={12} /> Drafting a rewrite…
+                </div>
+              ) : citationIssue ? (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-[#5A5A58]">
+                    This is a citation issue, not a wording issue
+                  </p>
+                  <p className="text-[12.5px] text-[#1A1A18] leading-relaxed">{citationIssue.message}</p>
+                  <p className="text-[11.5px] text-[#5A5A58] leading-relaxed">{citationIssue.suggestion}</p>
+                </div>
+              ) : suggestion ? (
+                <textarea
+                  value={suggestion}
+                  onChange={e => setSuggestion(e.target.value)}
+                  className="w-full bg-transparent text-[13.5px] text-[#1A1A18] leading-relaxed outline-none resize-none"
+                  rows={Math.max(3, Math.ceil(suggestion.length / 70))}
+                />
+              ) : (
+                <p className="text-[12px] text-[#9A9A98] italic">No suggestion yet.</p>
+              )}
+            </div>
+            {!citationIssue && (
+              <p className="text-[10px] text-[#9A9A98]">Edit the suggestion directly, or refine with an instruction below.</p>
+            )}
+          </div>
+
+          {/* Refine instruction */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={instruction}
+              onChange={e => setInstruction(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && instruction.trim()) generate(instruction); }}
+              placeholder='Refine — e.g. "add hedging", "shorten", "match the new source"…'
+              className="flex-1 rounded-xl border px-3 py-2.5 text-[12.5px] text-[#1A1A18] outline-none transition-colors"
+              style={{ borderColor: "var(--border)" }}
+              onFocus={e => (e.target.style.borderColor = "#A0A09E")}
+              onBlur={e => (e.target.style.borderColor = "var(--border)")}
+            />
+            <button
+              onClick={() => generate(instruction)}
+              disabled={generating || !instruction.trim()}
+              className="rounded-xl bg-[#1A1A18] px-4 text-[12px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
+            >
+              Apply
+            </button>
+          </div>
+
+          {/* Find better source */}
+          {showFindSource && (
+            <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: "var(--border)", background: "#FAFAF8" }}>
+              <div className="flex items-start gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A5A58" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 flex-shrink-0">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-[12.5px] font-semibold text-[#1A1A18]">
+                    {claim.verdict === "WRONG_SOURCE" || failureMode === "construct_mismatch"
+                      ? "This source doesn't address the claim."
+                      : failureMode === "citation_problem"
+                      ? "The cited source doesn't support this claim."
+                      : "Source unavailable for this claim."}
+                  </p>
+                  <p className="text-[11.5px] text-[#5A5A58] mt-0.5 leading-relaxed">
+                    Search for a better source — if found, the rewrite will regenerate from it.
+                  </p>
+                </div>
+              </div>
+
+              {replacedSource && (
+                <div className="rounded-lg px-3 py-2 text-[11px] flex items-center gap-2"
+                  style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#065F46" }}>
+                  <span className="font-bold">✓</span>
+                  Using new source: <span className="font-medium truncate">{replacedSource.title}</span>
+                </div>
+              )}
+
+              {!foundSource && (
+                <button
+                  onClick={handleFindSource}
+                  disabled={findingSource}
+                  className="w-full rounded-lg border px-3 py-2 text-[12px] font-medium text-[#1A1A18] hover:bg-white transition-all disabled:opacity-50"
+                  style={{ borderColor: "var(--border-strong)", background: "white" }}
+                >
+                  {findingSource
+                    ? <span className="inline-flex items-center gap-1.5"><Spinner size={11} /> Searching…</span>
+                    : "Find new source"}
+                </button>
+              )}
+
+              {foundSource && (
+                <div
+                  className="rounded-lg px-3 py-2.5 text-[11.5px] space-y-2"
+                  style={{
+                    background: foundSource.status === "found_full_text" ? "#F0FDF4"
+                              : foundSource.status === "found_abstract" ? "#FFFBEB" : "#F9FAFB",
+                    border: `1px solid ${
+                      foundSource.status === "found_full_text" ? "#BBF7D0"
+                      : foundSource.status === "found_abstract" ? "#FDE68A" : "#E5E7EB"
+                    }`,
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider"
+                      style={{
+                        color: foundSource.status === "found_full_text" ? "#065F46"
+                             : foundSource.status === "found_abstract" ? "#78350F" : "#374151"
+                      }}>
+                      {foundSource.status === "found_full_text" ? "Full text found"
+                       : foundSource.status === "found_abstract" ? "Abstract only" : "Not found"}
+                    </span>
+                    <button
+                      onClick={() => setFoundSource(null)}
+                      className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58]"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  {foundSource.title && (
+                    <p className="text-[11.5px] font-medium text-[#1A1A18]">{foundSource.title}</p>
+                  )}
+                  <p className="text-[10.5px] text-[#5A5A58] leading-relaxed">{foundSource.message}</p>
+                  {(foundSource.text || foundSource.abstract) && (
+                    <button
+                      onClick={handleUseFoundSource}
+                      className="w-full rounded-lg bg-[#1A1A18] px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90 transition-all"
+                    >
+                      Use this source &amp; regenerate rewrite
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          className="sticky bottom-0 px-6 py-3.5 border-t flex items-center justify-between gap-3 bg-white"
+          style={{ borderColor: "var(--border)" }}
+        >
+          <p className="text-[10.5px] text-[#9A9A98]">Esc to cancel</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="rounded-xl border px-4 py-2 text-[12.5px] font-medium text-[#5A5A58] hover:bg-[#F7F7F5] transition-all"
+              style={{ borderColor: "var(--border)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onAccept(suggestion)}
+              disabled={!suggestion.trim() || generating || suggestion.trim() === currentText.trim()}
+              className="rounded-xl bg-[#1A1A18] px-4 py-2 text-[12.5px] font-semibold text-white hover:opacity-90 transition-all disabled:opacity-40"
+            >
+              Accept &amp; apply
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1241,13 +1233,19 @@ export default function Home() {
   const [selectedClaimIdx, setSelectedClaimIdx] = useState<number | null>(null);
   const [hoveredClaimIdx, setHoveredClaimIdx]   = useState<number | null>(null);
 
-  // Floating toolbar state
-  const [floatingToolbar, setFloatingToolbar] = useState<{
-    position: { top: number; left: number };
-    selectedText: string;
-    claim: Claim | null;
-  } | null>(null);
-  const [floatingRewriteResult, setFloatingRewriteResult] = useState<string | null>(null);
+  // ── Working Draft editing state ──
+  // Active rewrite popup (modal). When open, the mark for activeRewrite.claimIdx
+  // gets a persistent highlight outline so the user can see what's being edited.
+  const [activeRewriteIdx, setActiveRewriteIdx] = useState<number | null>(null);
+  // Accepted rewrites: claim index → user-approved replacement text
+  const [acceptedRewrites, setAcceptedRewrites] = useState<Record<number, string>>({});
+  // Per-claim source overrides (used when "Find new source" returned a better match)
+  const [replacedSources, setReplacedSources] = useState<Record<number, FoundSource>>({});
+
+  // Export menu open state
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [reportExpanded, setReportExpanded] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
 
   // Sources screen UX
   const [openMenuKey, setOpenMenuKey]   = useState<string | null>(null);
@@ -1305,17 +1303,13 @@ export default function Home() {
     return () => document.removeEventListener("click", close);
   }, [openMenuKey]);
 
-  // Close floating toolbar on outside click
+  // Close export menu on outside click
   useEffect(() => {
-    if (!floatingToolbar) return;
-    const close = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest(".fixed.z-50")) return; // clicking inside toolbar
-      setFloatingToolbar(null);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [floatingToolbar]);
+    if (!exportMenuOpen) return;
+    const close = () => { setExportMenuOpen(false); setReportExpanded(false); };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [exportMenuOpen]);
 
   // ── handleFindSources ───────────────────────────────────────────────────────
   const handleFindSources = async () => {
@@ -1514,41 +1508,129 @@ export default function Home() {
     const iv = setInterval(() => { mi = (mi + 1) % msgs.length; setLoadingMsg(msgs[mi]); }, 4000);
 
     try {
+      // Defensive client-side truncation: the verify route does its own
+      // token-budget trimming, but with 20+ sources the JSON payload alone
+      // can grow past the dev-server's body buffer and surface as a
+      // browser-side "Failed to fetch". Cap each source at ~5k words.
+      const trimSourceText = (t?: string) => {
+        if (!t) return t;
+        const words = t.trim().split(/\s+/);
+        return words.length <= 5000 ? t : words.slice(0, 5000).join(" ");
+      };
+
       const sources = [
-        ...foundSources.map(s => ({ citationKey: s.citationKey, title: s.title, text: s.text, accessLevel: s.accessLevel })),
-        ...uploadedSources.map(s => ({ citationKey: s.citationKey, title: s.title, text: s.text, accessLevel: "Full text" })),
+        ...foundSources.map(s => ({ citationKey: s.citationKey, title: s.title, text: trimSourceText(s.text), accessLevel: s.accessLevel })),
+        ...uploadedSources.map(s => ({ citationKey: s.citationKey, title: s.title, text: trimSourceText(s.text), accessLevel: "Full text" })),
         ...missingSources.map(m => ({ citationKey: m.citationKey, title: m.title ?? m.citationKey,
-            text: m.kind === "abstract_only" ? m.abstract : undefined,
+            text: m.kind === "abstract_only" ? trimSourceText(m.abstract) : undefined,
             accessLevel: m.kind === "abstract_only" ? "Abstract only" : "Not found" })),
       ];
-      const res = await fetch("/api/verify", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ introText, references, sources }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Verification failed");
-      if (!data.claims) throw new Error(data.error || "Invalid response format");
-      setResult(data);
+
+      let res: Response;
+      try {
+        res = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ introText, references, sources }),
+        });
+      } catch (netErr) {
+        // fetch() rejects only on network-level failures (server unreachable,
+        // payload rejected before the handler ran, dev server crashed).
+        const sizeKb = Math.round(JSON.stringify({ introText, references, sources }).length / 1024);
+        throw new Error(
+          `Network error talking to /api/verify (payload ~${sizeKb} KB, ${sources.length} sources). ` +
+          `The dev server may have crashed. Original: ${netErr instanceof Error ? netErr.message : String(netErr)}`
+        );
+      }
+
+      const raw = await res.text();
+      let data: { error?: string; claims?: unknown; summary?: string };
+      try { data = JSON.parse(raw); }
+      catch { throw new Error(`Server returned non-JSON (HTTP ${res.status}): ${raw.slice(0, 200)}`); }
+
+      if (!res.ok) throw new Error(data.error || `Verification failed (HTTP ${res.status})`);
+      if (!data.claims) throw new Error(data.error || "Invalid response format — no claims");
+      setResult(data as VerificationResult);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally { clearInterval(iv); setLoading(false); }
   };
 
   // ── handleExport ────────────────────────────────────────────────────────────
-  const handleExport = async (format: "docx" | "pdf") => {
+  // Two flavours of export:
+  //  - "report-{docx,pdf}": the analysis report (claim-by-claim breakdown)
+  //  - "article-docx":      the manuscript with rewrites applied + flagged
+  //                          areas + references, ready to hand to a co-author
+  const handleExport = async (kind: "report-docx" | "report-pdf" | "article-docx") => {
     if (!result) return;
+    setExporting(kind);
+    setExportMenuOpen(false);
     try {
-      const res = await fetch(`/api/export/${format}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result),
+      let url: string;
+      let body: string;
+      let filename: string;
+      if (kind === "article-docx") {
+        url = "/api/export/article-docx";
+        body = JSON.stringify({
+          draft: introText,
+          references,
+          claims: result.claims,
+          acceptedRewrites: Object.fromEntries(
+            Object.entries(acceptedRewrites).map(([k, v]) => [k, v]),
+          ),
+        });
+        filename = "verified-article.docx";
+      } else if (kind === "report-docx") {
+        url = "/api/export/docx";
+        body = JSON.stringify(result);
+        filename = "claim-verification-report.docx";
+      } else {
+        url = "/api/export/pdf";
+        body = JSON.stringify(result);
+        filename = "claim-verification-report.pdf";
+      }
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
       });
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `claim-verification-report.${format}`; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) { setError(e instanceof Error ? e.message : "Export failed"); }
+      a.href = objUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(objUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // ── Rewrite acceptance handlers ─────────────────────────────────────────────
+  const handleAcceptRewrite = (claimIdx: number, text: string) => {
+    setAcceptedRewrites(p => ({ ...p, [claimIdx]: text }));
+    setActiveRewriteIdx(null);
+  };
+
+  const handleResetRewrite = (claimIdx: number) => {
+    setAcceptedRewrites(p => {
+      const next = { ...p };
+      delete next[claimIdx];
+      return next;
+    });
+  };
+
+  const handleResetAllRewrites = () => {
+    setAcceptedRewrites({});
+    setReplacedSources({});
+  };
+
+  const handleReplaceSource = (claimIdx: number, source: FoundSource) => {
+    setReplacedSources(p => ({ ...p, [claimIdx]: source }));
   };
 
   // ── Google Drive ────────────────────────────────────────────────────────────
@@ -1931,38 +2013,107 @@ export default function Home() {
               <h1 className="text-[20px] font-semibold tracking-tight text-[#1A1A18]">Analysis</h1>
             </div>
 
-            {/* Export buttons */}
-            <div className="flex items-center gap-2">
-              {/* Word export */}
+            {/* Export menu — Report (PDF/DOCX) vs. Corrected article (DOCX) */}
+            <div className="relative" onClick={e => e.stopPropagation()}>
               <button
-                onClick={() => handleExport("docx")}
-                className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all"
-                style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
+                onClick={() => setExportMenuOpen(v => !v)}
+                disabled={!!exporting}
+                className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all disabled:opacity-50"
+                style={{ borderColor: "var(--border)", color: "var(--text-primary)", background: "var(--surface)" }}
                 onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
               >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none">
-                  <rect x="3" y="2" width="14" height="16" rx="2" fill="#185ABD" fillOpacity="0.15"/>
-                  <path d="M3 6h14" stroke="#185ABD" strokeWidth="1.2" strokeOpacity="0.4"/>
-                  <path d="M6 10l1.2 5L10 11l2.8 4L15 10" stroke="#185ABD" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Word
+                {exporting ? (
+                  <><Spinner size={13} /> Generating…</>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    Export
+                    <svg className="h-3 w-3 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </>
+                )}
               </button>
-              {/* PDF export */}
-              <button
-                onClick={() => handleExport("pdf")}
-                className="inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-medium transition-all"
-                style={{ borderColor: "var(--border)", color: "var(--text-secondary)", background: "var(--surface)" }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--border-strong)")}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
-              >
-                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="none">
-                  <rect x="3" y="2" width="14" height="16" rx="2" fill="#DC2626" fillOpacity="0.12"/>
-                  <path d="M3 6h14" stroke="#DC2626" strokeWidth="1.2" strokeOpacity="0.4"/>
-                  <path d="M6.5 10h3c.8 0 1.5.7 1.5 1.5S10.3 13 9.5 13H6.5v-3zM13 10v3M11 11.5h2" stroke="#DC2626" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                PDF
-              </button>
+
+              {exportMenuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-2 bg-white rounded-xl overflow-hidden z-30"
+                  style={{
+                    border: "1px solid var(--border)",
+                    boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.07)",
+                    minWidth: 240,
+                  }}
+                >
+                  {/* Option 1: Corrected file */}
+                  <button
+                    onClick={() => handleExport("article-docx")}
+                    className="w-full px-4 py-3 text-left hover:bg-[#F7F7F5] transition-colors flex items-center gap-3"
+                  >
+                    <div className="h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: "rgba(16,185,129,0.12)", color: "#059669" }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                    </div>
+                    <span className="text-[13px] font-medium text-[#1A1A18]">Corrected file</span>
+                  </button>
+
+                  <div className="h-px mx-3" style={{ background: "var(--border)" }} />
+
+                  {/* Option 2: Report — expands to PDF / Word */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setReportExpanded(v => !v); }}
+                    className="w-full px-4 py-3 text-left hover:bg-[#F7F7F5] transition-colors flex items-center gap-3"
+                  >
+                    <div className="h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: "rgba(99,102,241,0.10)", color: "#6366F1" }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M3 9h18M9 21V9" />
+                      </svg>
+                    </div>
+                    <span className="flex-1 text-[13px] font-medium text-[#1A1A18]">Report</span>
+                    <svg
+                      className="h-3.5 w-3.5 text-[#9A9A98] transition-transform duration-150"
+                      style={{ transform: reportExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
+                      viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
+
+                  {reportExpanded && (
+                    <div className="pb-1.5" style={{ background: "#FAFAF8" }}>
+                      <button
+                        onClick={() => handleExport("report-pdf")}
+                        className="w-full pl-[52px] pr-4 py-2 text-left hover:bg-[#F0F0EE] transition-colors flex items-center gap-2.5"
+                      >
+                        <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="none">
+                          <rect x="3" y="2" width="14" height="16" rx="2" fill="#DC2626" fillOpacity="0.15"/>
+                          <path d="M6.5 10h3c.8 0 1.5.7 1.5 1.5S10.3 13 9.5 13H6.5v-3zM13 10v3M11 11.5h2" stroke="#DC2626" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <span className="text-[12px] text-[#3A3A38]">PDF</span>
+                      </button>
+                      <button
+                        onClick={() => handleExport("report-docx")}
+                        className="w-full pl-[52px] pr-4 py-2 text-left hover:bg-[#F0F0EE] transition-colors flex items-center gap-2.5"
+                      >
+                        <svg className="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 20 20" fill="none">
+                          <rect x="3" y="2" width="14" height="16" rx="2" fill="#185ABD" fillOpacity="0.15"/>
+                          <path d="M6 10l1.2 5L10 11l2.8 4L15 10" stroke="#185ABD" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                        <span className="text-[12px] text-[#3A3A38]">Word</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -2026,11 +2177,13 @@ export default function Home() {
                         index={globalIdx}
                         isSelected={selectedClaimIdx === globalIdx}
                         isHovered={hoveredClaimIdx === globalIdx}
+                        hasPendingChange={acceptedRewrites[globalIdx] !== undefined}
                         onSelect={() => handleClaimNavClick(globalIdx)}
                         onHover={() => setHoveredClaimIdx(globalIdx)}
                         onHoverEnd={() => setHoveredClaimIdx(null)}
                         cardRef={el => { claimCardRefs.current[globalIdx] = el; }}
                         allSources={[...foundSources, ...uploadedSources]}
+                        onOpenRewrite={() => setActiveRewriteIdx(globalIdx)}
                       />
                     );
                   })
@@ -2046,86 +2199,77 @@ export default function Home() {
               )}
             </div>
 
-            {/* ── Right panel: Annotated text ── */}
+            {/* ── Right panel: Working Draft ── */}
             <div
               ref={rightPanelRef}
               className="flex-1 overflow-y-auto panel-scroll"
-              style={{ padding: "28px 40px 40px" }}
+              style={{ padding: "20px 40px 40px" }}
               onMouseUp={() => {
-                // Detect text selection for floating toolbar
+                // A text selection within a marked sentence opens the same
+                // unified rewrite popup. The mark for that claim then keeps
+                // its "active" outline (see mark style below) so the user
+                // can see what's being edited even after the OS clears the
+                // text selection.
                 const sel = window.getSelection();
-                if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-                  // Don't close toolbar if user clicks inside it
-                  return;
-                }
+                if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
                 const text = sel.toString().trim();
-                if (text.length < 5) return;
+                if (text.length < 3) return;
 
-                // Find which claim this selection belongs to
                 const range = sel.getRangeAt(0);
                 const markEl = range.startContainer.parentElement?.closest("mark");
                 if (!markEl) return;
 
-                // Find the claim from mark refs
-                let matchedClaim: Claim | null = null;
                 for (const [idx, el] of Object.entries(claimMarkRefs.current)) {
                   if (el === markEl) {
-                    matchedClaim = result.claims[parseInt(idx)];
-                    break;
+                    setActiveRewriteIdx(parseInt(idx));
+                    sel.removeAllRanges();
+                    return;
                   }
                 }
-                if (!matchedClaim) return;
-
-                const rect = range.getBoundingClientRect();
-                setFloatingToolbar({
-                  position: { top: rect.bottom + 8, left: rect.left + rect.width / 2 },
-                  selectedText: text,
-                  claim: matchedClaim,
-                });
-                setFloatingRewriteResult(null);
               }}
             >
-              {/* Floating toolbar */}
-              {floatingToolbar && (
-                <FloatingToolbar
-                  position={floatingToolbar.position}
-                  selectedText={floatingToolbar.selectedText}
-                  claim={floatingToolbar.claim}
-                  allSources={[...foundSources, ...uploadedSources]}
-                  onRewritten={(text) => {
-                    setFloatingRewriteResult(text);
-                    setFloatingToolbar(null);
-                  }}
-                  onClose={() => { setFloatingToolbar(null); setFloatingRewriteResult(null); }}
-                />
-              )}
-
-              {/* Inline rewrite result banner */}
-              {floatingRewriteResult && (
-                <div className="mb-4 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] px-4 py-3 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-semibold text-[#065F46] uppercase tracking-wider">Suggested rewrite</p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(floatingRewriteResult); }}
-                        className="text-[10px] font-medium text-[#065F46] hover:text-[#047857] transition-colors"
-                      >
-                        Copy
-                      </button>
-                      <button
-                        onClick={() => setFloatingRewriteResult(null)}
-                        className="text-[10px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[13px] text-[#14532D] leading-relaxed">{floatingRewriteResult}</p>
+              {/* ── Working Draft header ── */}
+              <div className="flex items-end justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#9A9A98]">Working draft</p>
+                  <h2 className="text-[18px] font-semibold text-[#1A1A18] tracking-tight mt-0.5">
+                    Click any flagged sentence to revise
+                  </h2>
                 </div>
-              )}
+                <div className="flex items-center gap-3">
+                  {Object.keys(acceptedRewrites).length > 0 && (
+                    <>
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                        style={{ background: "#ECFDF5", color: "#047857", border: "1px solid #BBF7D0" }}
+                      >
+                        <span className="font-bold">⟲</span>
+                        {Object.keys(acceptedRewrites).length} revision{Object.keys(acceptedRewrites).length === 1 ? "" : "s"} applied
+                      </span>
+                      <button
+                        onClick={handleResetAllRewrites}
+                        className="text-[11px] text-[#9A9A98] hover:text-[#5A5A58] transition-colors underline-offset-2 hover:underline"
+                      >
+                        Reset all
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
 
-              {/* Annotated text */}
-              <div className="card p-8 cursor-default">
+              {/* ── Working draft document ── */}
+              <div
+                className="rounded-2xl bg-white p-9 cursor-text relative"
+                style={{
+                  border: "1px solid var(--border)",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.045)",
+                }}
+              >
+                {/* Subtle "document" indicator */}
+                <div className="absolute top-3 right-4 text-[9px] font-mono text-[#C8C8C6] tracking-widest uppercase select-none">
+                  Manuscript
+                </div>
+
                 <p className="text-[15px] text-[#2A2A28] leading-[2] whitespace-pre-wrap">
                   {buildTextSegments(introText, result.claims).map((seg, i) => {
                     if (seg.type === "text") return <span key={i}>{seg.content}</span>;
@@ -2133,36 +2277,82 @@ export default function Home() {
                     const cfg = VERDICT_CONFIG[seg.claim.verdict] ?? VERDICT_CONFIG.UNVERIFIABLE;
                     const isSelected = selectedClaimIdx === globalIdx;
                     const isHovered = hoveredClaimIdx === globalIdx;
+                    const isActive = activeRewriteIdx === globalIdx;
+                    const acceptedText = acceptedRewrites[globalIdx];
+                    const hasPendingChange = acceptedText !== undefined;
+                    // When a revision is applied, render the new text but
+                    // visually mark it as a change (green tint + check)
+                    const displayText = acceptedText ?? seg.content;
+
                     return (
                       <mark
                         key={i}
                         ref={el => { if (el) claimMarkRefs.current[globalIdx] = el; }}
-                        onClick={e => handleMarkClick(globalIdx, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkClick(globalIdx, e);
+                          setActiveRewriteIdx(globalIdx);
+                        }}
                         onMouseEnter={() => setHoveredClaimIdx(globalIdx)}
                         onMouseLeave={() => setHoveredClaimIdx(null)}
                         style={{
-                          background: isSelected
-                            ? cfg.badgeBg
-                            : isHovered
-                              ? `${cfg.badgeBg}F0`
-                              : `${cfg.badgeBg}BB`,
+                          background: hasPendingChange
+                            ? "#ECFDF5"
+                            : isActive
+                              ? cfg.badgeBg
+                              : isSelected
+                                ? cfg.badgeBg
+                                : isHovered
+                                  ? `${cfg.badgeBg}F0`
+                                  : `${cfg.badgeBg}BB`,
                           color: "inherit",
-                          borderBottom: `${isSelected ? 3 : 2}px solid ${isSelected ? cfg.accent : isHovered ? `${cfg.accent}DD` : `${cfg.accent}AA`}`,
-                          borderRadius: "2px",
-                          padding: "1px 2px",
+                          borderBottom: hasPendingChange
+                            ? "2px solid #10B981"
+                            : `${isSelected || isActive ? 3 : 2}px solid ${
+                                isSelected || isActive
+                                  ? cfg.accent
+                                  : isHovered
+                                    ? `${cfg.accent}DD`
+                                    : `${cfg.accent}AA`
+                              }`,
+                          borderRadius: "3px",
+                          padding: "1px 3px",
                           cursor: "pointer",
-                          transition: "background 0.15s, border-color 0.15s",
-                          outline: isSelected ? `2px solid ${cfg.accent}44` : undefined,
+                          transition: "background 0.15s, border-color 0.15s, box-shadow 0.18s",
+                          outline: isActive
+                            ? `2px solid ${cfg.accent}`
+                            : isSelected
+                              ? `2px solid ${cfg.accent}44`
+                              : undefined,
                           outlineOffset: "1px",
+                          boxShadow: isActive
+                            ? `0 0 0 6px ${cfg.accent}1F, 0 2px 8px ${cfg.accent}33`
+                            : undefined,
                         }}
-                        title={cfg.label}
+                        title={hasPendingChange ? "Revised — click to revise again" : `${cfg.label} — click to revise`}
                       >
-                        {seg.content}
+                        {displayText}
+                        {hasPendingChange && (
+                          <span
+                            className="ml-1 text-[10px] font-bold align-middle select-none"
+                            style={{ color: "#047857" }}
+                            title="Revision applied"
+                          >
+                            ⟲
+                          </span>
+                        )}
                       </mark>
                     );
                   })}
                 </p>
               </div>
+
+              {/* Empty-state hint when nothing has been clicked yet */}
+              {Object.keys(acceptedRewrites).length === 0 && activeRewriteIdx === null && (
+                <p className="mt-4 text-[12px] text-[#9A9A98] text-center">
+                  Tip: select any text inside a highlighted sentence, or just click it, to open the rewrite editor.
+                </p>
+              )}
 
               {error && <div className="mt-4"><ErrorBanner error={error} /></div>}
             </div>
@@ -2176,6 +2366,19 @@ export default function Home() {
           source={editingSource}
           onSave={handleSaveEdit}
           onClose={() => setEditingSource(null)}
+        />
+      )}
+
+      {/* Unified Rewrite Popup — opens for any claim, regardless of verdict */}
+      {activeRewriteIdx !== null && result && result.claims[activeRewriteIdx] && (
+        <RewritePopup
+          claim={result.claims[activeRewriteIdx]}
+          currentText={acceptedRewrites[activeRewriteIdx] ?? result.claims[activeRewriteIdx].claim}
+          allSources={[...foundSources, ...uploadedSources]}
+          replacedSource={replacedSources[activeRewriteIdx]}
+          onAccept={(text) => handleAcceptRewrite(activeRewriteIdx!, text)}
+          onReplaceSource={(s) => handleReplaceSource(activeRewriteIdx!, s)}
+          onClose={() => setActiveRewriteIdx(null)}
         />
       )}
     </div>
